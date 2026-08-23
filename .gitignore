@@ -1,0 +1,14 @@
+# Local-only: private message drafts to teammate
+WHATSAPP.md
+
+# Build artifacts
+*.zip
+
+# Secrets — never commit
+.env
+*.key
+
+# Python
+__pycache__/
+*.pyc
+.venv/
