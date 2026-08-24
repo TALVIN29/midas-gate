@@ -4,7 +4,7 @@
 > day, a normal day or a scared day — and issues the permissions that everything
 > downstream is allowed to work inside.
 
-> **What changed since v1** ([appendix/regime.md](appendix/regime.md)): the placeholder
+> **What changed since v1** ([appendix/regime.md](../appendix/regime.md)): the placeholder
 > thresholds are gone, replaced by **Gold Regime Rules V1** from the teammate. The output
 > is now a full machine-readable permission block (risk budget, allowed strategies, a
 > put-spread permission flag), not just a label and three numbers. Added: an explicit

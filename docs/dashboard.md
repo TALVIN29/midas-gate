@@ -4,7 +4,7 @@
 > allowed to do, whether it obeyed, and what it learned. No server behind it — it just
 > reads one file that the audit step writes.
 
-> **What changed since v1** ([appendix/dashboard.md](appendix/dashboard.md)): the page now
+> **What changed since v1** ([appendix/dashboard.md](../appendix/dashboard.md)): the page now
 > surfaces the whole control architecture, not just P&L. Added: the four operating states
 > and the reason for the current one, the legal envelope summary, the pre-trade validation
 > result, the outcome classification, the active learning lessons, and any human review or

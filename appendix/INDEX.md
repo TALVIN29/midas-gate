@@ -5,7 +5,7 @@ before the architecture handoff (`MIDAS_GATE_ARCHITECTURE_HANDOFF_FOR_TALVIN_AND
 and before the build decisions recorded in `BUILD_PLAN.md`.
 
 They are **superseded**. The current contract the code must satisfy lives one level up in
-[`../`](../). Nothing here should be built from.
+[`../docs/`](../docs/README.md). Nothing here should be built from.
 
 They are kept, unedited, for one reason: they are the record of what we believed first.
 Three things in them turned out to be wrong, and the corrections are the interesting part
@@ -26,7 +26,7 @@ tree holds one current layer (`docs/`) and one historical layer (this folder).
 
 | File | What it is |
 |---|---|
-| [PLAN.md](PLAN.md) | The original strategy and schedule. Superseded by [`../README.md`](../README.md) plus [`../../BUILD_PLAN.md`](../../BUILD_PLAN.md). Contains the wrong calendar and the flat $2,000 sizing |
+| [PLAN.md](PLAN.md) | The original strategy and schedule. Superseded by [`../docs/README.md`](../docs/README.md) plus [`../BUILD_PLAN.md`](../BUILD_PLAN.md). Contains the wrong calendar and the flat $2,000 sizing |
 | [MIDAS_GATE_ARCHITECTURE_HANDOFF_FOR_TALVIN_AND_CLAUDE.md](MIDAS_GATE_ARCHITECTURE_HANDOFF_FOR_TALVIN_AND_CLAUDE.md) | The teammate's control-architecture upgrade. **Still the authority** on bounded autonomy, the four operating states, pre-trade revalidation, audit escalation and the learning loops — the current docs implement it rather than replacing it |
 | [WHATSAPP.md](WHATSAPP.md) | The team conversation the gold thresholds and the division of ownership came out of. Provenance for Gold Regime Rules V1 |
 
@@ -36,12 +36,12 @@ tree holds one current layer (`docs/`) and one historical layer (this folder).
 
 | v1 file | Superseded by |
 |---|---|
-| [README.md](README.md) | [../README.md](../README.md) |
-| [regime.md](regime.md) | [../regime.md](../regime.md) |
-| [gates.md](gates.md) | [../gates.md](../gates.md) |
-| [bs.md](bs.md) | [../bs.md](../bs.md) |
-| [agent.md](agent.md) | [../agent.md](../agent.md) |
-| [audit.md](audit.md) | [../audit.md](../audit.md) |
-| [backtest.md](backtest.md) | [../backtest.md](../backtest.md) |
-| [workflow.md](workflow.md) | [../workflow.md](../workflow.md) |
-| [dashboard.md](dashboard.md) | [../dashboard.md](../dashboard.md) |
+| [README.md](README.md) | [../docs/README.md](../docs/README.md) |
+| [regime.md](regime.md) | [../docs/regime.md](../docs/regime.md) |
+| [gates.md](gates.md) | [../docs/gates.md](../docs/gates.md) |
+| [bs.md](bs.md) | [../docs/bs.md](../docs/bs.md) |
+| [agent.md](agent.md) | [../docs/agent.md](../docs/agent.md) |
+| [audit.md](audit.md) | [../docs/audit.md](../docs/audit.md) |
+| [backtest.md](backtest.md) | [../docs/backtest.md](../docs/backtest.md) |
+| [workflow.md](workflow.md) | [../docs/workflow.md](../docs/workflow.md) |
+| [dashboard.md](dashboard.md) | [../docs/dashboard.md](../docs/dashboard.md) |

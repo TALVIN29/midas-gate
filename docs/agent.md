@@ -4,7 +4,7 @@
 > allowed to make plus a few lessons from what happened recently, it looks at the real
 > market, picks one — or picks none — and writes down why.
 
-> **What changed since v1** ([appendix/agent.md](appendix/agent.md)): the agent now
+> **What changed since v1** ([appendix/agent.md](../appendix/agent.md)): the agent now
 > receives a compact **learning memory** alongside the envelope, and its proposal goes to
 > the **pre-trade validator** rather than straight to the broker. `NO_TRADE` is promoted
 > from "allowed" to an explicitly valid autonomous outcome that is audited and published

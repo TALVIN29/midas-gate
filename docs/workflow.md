@@ -4,7 +4,7 @@
 > scheduled job that runs the whole system twice a day on its own, remembers what state
 > the system was left in, and refuses to start the AI if that state says stop.
 
-> **What changed since v1** ([appendix/workflow.md](appendix/workflow.md)): the workflow
+> **What changed since v1** ([appendix/workflow.md](../appendix/workflow.md)): the workflow
 > now carries a **persisted operating state** and a **run id** through the whole chain.
 > Added: no AI invocation while deterministically halted, duplicate-run protection across
 > reruns, learning-memory persistence, and the corrected calendar (first live day Aug 28;

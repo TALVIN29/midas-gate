@@ -3,13 +3,13 @@
 Plain-language specs for every part of the system. Written **before** the code, so each
 file below is the contract the code has to satisfy.
 
-The strategy and the schedule live in [`appendix/PLAN.md`](appendix/PLAN.md); the decisions and build
+The strategy and the schedule live in [`appendix/PLAN.md`](../appendix/PLAN.md); the decisions and build
 order live in [`../BUILD_PLAN.md`](../BUILD_PLAN.md); the control architecture these docs
-implement is [`appendix/MIDAS_GATE_ARCHITECTURE_HANDOFF_FOR_TALVIN_AND_CLAUDE.md`](appendix/MIDAS_GATE_ARCHITECTURE_HANDOFF_FOR_TALVIN_AND_CLAUDE.md).
+implement is [`appendix/MIDAS_GATE_ARCHITECTURE_HANDOFF_FOR_TALVIN_AND_CLAUDE.md`](../appendix/MIDAS_GATE_ARCHITECTURE_HANDOFF_FOR_TALVIN_AND_CLAUDE.md).
 This folder is the "how it actually works" layer.
 
 > **What changed since v1.** These docs are a full rewrite. The pre-handoff versions are
-> kept unedited in [`appendix/`](appendix/INDEX.md) — including the three things they got
+> kept unedited in [`appendix/`](../appendix/INDEX.md) — including the three things they got
 > wrong (the trading calendar, the flat risk budget, the placeholder gold thresholds).
 
 ---
@@ -184,7 +184,7 @@ the market moved is `MARKET_MOVE`, not an error, and must not change behaviour.
 | [backtest.md](backtest.md) | `backtest.py` | Historical evidence, V1 frozen before tuning |
 | [workflow.md](workflow.md) | `.github/workflows/trade.yml` | The clock, the secrets, the persisted state |
 | [dashboard.md](dashboard.md) | `site/` | The public record |
-| [appendix/INDEX.md](appendix/INDEX.md) | — | The superseded v1 specs, and what changed |
+| [appendix/INDEX.md](../appendix/INDEX.md) | — | The superseded v1 specs, and what changed |
 
 Deliberately **not** one file per concept. State management, exception handling,
 pre-trade validation, learning memory and outcome classification are concepts, not

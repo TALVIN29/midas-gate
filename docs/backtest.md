@@ -5,7 +5,7 @@
 > actually help?" That answer goes in the write-up — and it is the only route by which the
 > regime rules are ever allowed to change.
 
-> **What changed since v1** ([appendix/backtest.md](appendix/backtest.md)): the backtest is
+> **What changed since v1** ([appendix/backtest.md](../appendix/backtest.md)): the backtest is
 > no longer only evidence for a claim. It is now the **slow learning loop** — the one
 > sanctioned path from "the rules look wrong" to "the rules are different", with a human in
 > the middle. Added: the V1-frozen-before-tuning discipline, per-regime reporting, the

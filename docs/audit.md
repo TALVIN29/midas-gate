@@ -5,7 +5,7 @@
 > wrong was a genuine mistake, writes down at most a handful of lessons, and publishes it
 > all to the website.
 
-> **What changed since v1** ([appendix/audit.md](appendix/audit.md)): an `AUDIT_FAIL` is
+> **What changed since v1** ([appendix/audit.md](../appendix/audit.md)): an `AUDIT_FAIL` is
 > no longer merely displayed — it **latches a halt** and escalates to `REVIEW_REQUIRED`.
 > Added: the outcome/mistake taxonomy, bounded lesson generation, partial-fill escalation,
 > and persistence of the operating state and exception history.

@@ -5,7 +5,7 @@
 > answered, the same file checks the answer again against fresh data. If we have lost too
 > much today, it hands over nothing at all.
 
-> **What changed since v1** ([appendix/gates.md](appendix/gates.md)): total open risk is
+> **What changed since v1** ([appendix/gates.md](../appendix/gates.md)): total open risk is
 > now regime-scaled ($10k / $5k / $0) instead of a flat $2,000. Added: the data-health
 > gate, the persisted operating state, latched halts, run-id duplicate protection, the
 > order-rejection policy, and — the big one — the **deterministic pre-trade validator**

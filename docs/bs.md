@@ -4,7 +4,7 @@
 > unreliable. So we compute our own, using the standard textbook formula, and we show them
 > on the dashboard — but we never let them choose a trade.
 
-> **What changed since v1** ([appendix/bs.md](appendix/bs.md)): nothing architectural, and
+> **What changed since v1** ([appendix/bs.md](../appendix/bs.md)): nothing architectural, and
 > that is deliberate. The handoff explicitly preserves local Black-Scholes, display-only
 > greeks, and the rule that greeks must never become decision gates. What is added here is
 > the tie-in to the new control chain: the greeks are not in the envelope, not in the
