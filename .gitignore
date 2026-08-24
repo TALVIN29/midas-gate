@@ -12,3 +12,6 @@ WHATSAPP.md
 __pycache__/
 *.pyc
 .venv/
+
+# MCP server stderr log
+mcp-server.log
