@@ -28,7 +28,7 @@ tree holds one current layer (`docs/`) and one historical layer (this folder).
 |---|---|
 | [PLAN.md](PLAN.md) | The original strategy and schedule. Superseded by [`../docs/README.md`](../docs/README.md) plus [`../BUILD_PLAN.md`](../BUILD_PLAN.md). Contains the wrong calendar and the flat $2,000 sizing |
 | [MIDAS_GATE_ARCHITECTURE_HANDOFF_FOR_TALVIN_AND_CLAUDE.md](MIDAS_GATE_ARCHITECTURE_HANDOFF_FOR_TALVIN_AND_CLAUDE.md) | The teammate's control-architecture upgrade. **Still the authority** on bounded autonomy, the four operating states, pre-trade revalidation, audit escalation and the learning loops — the current docs implement it rather than replacing it |
-| [WHATSAPP.md](WHATSAPP.md) | The team conversation the gold thresholds and the division of ownership came out of. Provenance for Gold Regime Rules V1 |
+| `WHATSAPP.md` | The team conversation the gold thresholds and the division of ownership came out of. Provenance for Gold Regime Rules V1. **Local only** — gitignored, along with the two `.zip` archives beside it, because it holds private message drafts |
 
 `BUILD_PLAN.md` stays at the repository root: it is the live build order, not history.
 
