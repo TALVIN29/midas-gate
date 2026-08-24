@@ -1,58 +1,174 @@
 # Midas Gate — module documentation
 
-Plain-language specs for every part of the system. Written **before** the code, so
-each file below is the contract that the code has to satisfy.
+Plain-language specs for every part of the system. Written **before** the code, so each
+file below is the contract the code has to satisfy.
 
-The strategy and the schedule live in [`../PLAN.md`](../PLAN.md). This folder is the
-"how it actually works" layer.
+The strategy and the schedule live in [`appendix/PLAN.md`](appendix/PLAN.md); the decisions and build
+order live in [`../BUILD_PLAN.md`](../BUILD_PLAN.md); the control architecture these docs
+implement is [`appendix/MIDAS_GATE_ARCHITECTURE_HANDOFF_FOR_TALVIN_AND_CLAUDE.md`](appendix/MIDAS_GATE_ARCHITECTURE_HANDOFF_FOR_TALVIN_AND_CLAUDE.md).
+This folder is the "how it actually works" layer.
+
+> **What changed since v1.** These docs are a full rewrite. The pre-handoff versions are
+> kept unedited in [`appendix/`](appendix/INDEX.md) — including the three things they got
+> wrong (the trading calendar, the flat risk budget, the placeholder gold thresholds).
 
 ---
 
-## The two facts that shape everything
+## The one sentence
 
-**1. There are only about four trading days.** Aug 29, Sep 2, Sep 3, and Sep 4 up to
-roughly 11:00 ET. Labor Day closes Sep 1.
+> Midas Gate is a human-governed, deterministically constrained autonomous SPY options
+> trading agent that uses a gold/macro regime to control risk, learns from audited
+> outcomes inside its approved envelope, fails toward caution under uncertainty, and
+> escalates only safety-critical exceptions to human review.
 
-Four days is far too short to bet on a market going up or down and call the result
-skill — that is a coin flip. So we do not bet on direction. We **sell options and
-collect the premium**, which pays us a little every day simply because time passes.
-That works in a flat market, a mildly-up market, and a mildly-down market. It turns
-"did we get lucky" into "did we engineer this properly".
+And the control philosophy in two lines:
 
-**2. Alpaca's free data feed labels its option prices "indicative".** The numbers it
-gives for the risk measures (the greeks) are not trustworthy. Paying for the real
-feed is $99/month.
+> **The AI chooses. Deterministic code permits.**
+>
+> **Learning changes preferences, not permissions.**
 
-So we never let those numbers pick our trades. We choose which contracts to sell by
-**how far away the price is from where the market is trading right now**, measured as
-a percentage. That number is reliable. We compute the greeks ourselves and show them
-on the dashboard as context only — never as an input to a decision.
+---
+
+## The three facts that shape everything
+
+**1. There are about five and a half trading days.**
+
+| Date | Day | Notes |
+|---|---|---|
+| Aug 28 | Fri | First live day. Hackathon opens |
+| Aug 31 | Mon | |
+| Sep 1 | Tue | *Not* a holiday — Labor Day 2026 is Sep 7 |
+| Sep 2 | Wed | |
+| Sep 3 | Thu | |
+| Sep 4 | Fri | Close-out only, to 11:00 ET. Submission 15:00 UTC |
+
+Still far too short to bet on direction and call the result skill — that is a coin flip.
+So we do not bet on direction. We **sell options and collect the premium**, which pays us
+a little every day simply because time passes. That works in a flat market, a mildly-up
+market and a mildly-down market. It turns "did we get lucky" into "did we engineer this
+properly".
+
+**2. Alpaca's free option feed labels its prices "indicative".** The greeks and implied
+volatility that come with it are not trustworthy, and the real feed is $99/month. So we
+never let those numbers pick our trades. We choose contracts by **percentage distance
+from where the market is trading right now** — a direct measurement, not a model output.
+We compute our own greeks and show them as context only. See [bs.md](bs.md).
+
+**3. An AI that is *asked* to obey a limit has not been constrained.** Prompts are
+requests. So the limits are computed in ordinary Python before the model is called, and
+re-checked in ordinary Python after it answers. The model never touches a number that
+matters.
+
+---
+
+## Bounded autonomy
+
+The governing rule, and the thing a judge should take away:
+
+> **The agent may optimise decisions within the envelope. Only humans may redefine the
+> envelope.**
+
+Normal trading is **fully autonomous** — no human approves a trade. Humans are *on* the
+loop, not *in* it. A person is involved only on exception: an audit violation, a
+broker/system mismatch, an unknown position, a competition-level halt, or a deliberate
+change to the regime or risk rules.
+
+---
+
+## The four operating states
+
+Persisted in `state.json` between runs, so a state set at 09:35 still binds at 13:05 and
+a halt survives a workflow rerun.
+
+| State | Meaning | Effect |
+|---|---|---|
+| `ACTIVE` | Everything needed for safe operation is healthy | Autonomous trading, inside the envelope |
+| `DEGRADED` | Something non-critical is missing, stale or uncertain | Regime defaults toward caution; allowances cut; may disable new positions |
+| `HALTED` | No new orders may be placed | Daily drawdown halt, stale critical SPY data, broker/API failure, repeated order rejection, validator cannot establish a safe state. **The AI is not called at all** |
+| `REVIEW_REQUIRED` | A critical inconsistency that must not be auto-ignored | Partial spread, audit violation, broker state ≠ our records, unknown exposure, −4% competition halt. A human must investigate before normal operation resumes |
+
+**Caution is asymmetric.** The system may become more cautious *immediately*. It may not
+become materially more aggressive intraday: if 09:35 was RISK_OFF and 13:05 looks
+RISK_ON, the cautious state stands until the next trading day.
 
 ---
 
 ## How the pieces chain together
 
 ```
-GitHub Actions cron (weekdays, 2 runs a day)
+GitHub Actions cron (weekdays, 09:35 + 13:05 ET)
   │
-  ├─ 1. regime.py   reads gold-related prices, decides today's mood:
-  │                 RISK_ON | NEUTRAL | RISK_OFF, plus how big we may trade
+  ├─ 0. state       read persisted state. Competition halt / daily halt /
+  │                 REVIEW_REQUIRED still latched? → publish, exit
   │
-  ├─ 2. gates.py    reads the account, works out the ENVELOPE — the complete list
-  │                 of trades that are legal right now. Or refuses to produce one
-  │                 at all, if a loss limit has been hit.
+  ├─ 1. data health read account, positions, orders, market data. Critical data
+  │                 missing or stale → HALTED. Secondary missing → DEGRADED
   │
-  ├─ 3. agent.py    the AI. Receives the envelope. Picks one trade from inside it
-  │                 and places it, through Alpaca's MCP server. Writes down why.
+  ├─ 2. regime.py   gold/macro read → RISK_ON | NEUTRAL | RISK_OFF, plus an
+  │                 explicit machine-readable permission block
   │
-  └─ 4. audit.py    checks what actually got filled, confirms it obeyed the
-                    envelope, recomputes profit and loss, publishes site/state.json
+  ├─ 3. gates.py    account + regime → the ENVELOPE: every trade that is legal
+  │                 right now. Or a refusal, and no envelope at all
+  │
+  ├─ 4. agent.py    the AI. Receives envelope + compact learning memory. Ranks the
+  │                 legal candidates, picks one or returns NO_TRADE. Explains itself
+  │
+  ├─ 5. validator   deterministic re-check of the AI's proposal against a freshly
+  │      (gates.py) refreshed market and account. Fails → no order is sent
+  │
+  ├─ 6. execution   the order goes to Alpaca via MCP. One controlled retry on
+  │                 rejection, then halt the run
+  │
+  └─ 7. audit.py    re-read actual fills, compare against the envelope in force,
+                    AUDIT_PASS / AUDIT_FAIL, classify the outcome, update the
+                    bounded learning memory, write site/state.json
 ```
 
-The important design choice: **step 2 runs before step 3.** The AI never gets the
-chance to break a risk limit, because by the time it is asked anything, the only
-options in front of it are already legal ones. That is a much stronger guarantee than
-writing "please do not exceed $500 of risk" in a prompt and hoping.
+Two design choices carry the whole safety story:
+
+- **Step 3 runs before step 4.** By the time the AI is asked anything, the only trades in
+  front of it are already legal ones.
+- **Step 5 runs after step 4.** The AI's answer never reaches the broker unchecked, and
+  the check uses fresh data — so a market that moved while the model was thinking cannot
+  smuggle an illegal trade through.
+
+---
+
+## Risk sizing
+
+Per-spread maximum loss is fixed at **$500**. Total open risk is **scaled by the regime**,
+because the gold thesis should set money at risk, not just strike distance:
+
+| Regime | Total open risk budget | Strategies | Min OTM distance | Max positions |
+|---|---|---|---|---|
+| `RISK_ON` | $10,000 | Iron condor, put credit spread | ~1.0% | 3 |
+| `NEUTRAL` | $5,000 | Put credit spread | ~1.5% | 2 |
+| `RISK_OFF` | $0 | None (no new risk) | ~2.5% | 1 |
+
+Hard, never regime-scaled: −2% daily drawdown halt (latched for the day), −4% competition
+halt (latched, human reset only), $500 per spread, no new positions after 15:30 ET, no
+new positions on Sep 4, close everything by 15:45 ET on the last trading day.
+
+Sizing rationale: at the old flat $2,000 the realistic capture over the window was about
++0.25% on $100k, which concedes the P&L criterion. At the regime-scaled ceiling the
+realistic band is roughly +0.6% to +1.2%, with a tail around −2% — comfortably clear of
+the −4% halt on ordinary noise.
+
+---
+
+## Fast and slow learning
+
+| | Fast loop | Slow loop |
+|---|---|---|
+| Runs | During the competition, every run | Offline, by hand |
+| Input | Audited outcomes, classified | Backtest + accumulated outcomes |
+| May change | Ranking between legal candidates, liquidity preference, distance preference inside the allowed range, choosing `NO_TRADE` | Proposes a change to the regime or risk rules |
+| May never change | Any hard limit, any permission, any threshold | Nothing by itself — a human accepts or rejects, and the change is version-controlled |
+
+Memory is bounded: 3–5 active lessons, last 5–10 outcomes. See [audit.md](audit.md).
+
+Not every loss is a mistake. A correctly selected defined-risk spread that lost because
+the market moved is `MARKET_MOVE`, not an error, and must not change behaviour.
 
 ---
 
@@ -60,20 +176,24 @@ writing "please do not exceed $500 of risk" in a prompt and hoping.
 
 | Doc | Module | What it does |
 |---|---|---|
-| [regime.md](regime.md) | `regime.py` | Gold prices in, today's risk mood out |
-| [gates.md](gates.md) | `gates.py` | Account state in, list of legal trades out |
-| [bs.md](bs.md) | `bs.py` | Our own option maths, for display only |
-| [agent.md](agent.md) | `agent.py` | The AI that picks and places the trade |
-| [audit.md](audit.md) | `audit.py` | Checks the AI, publishes the results |
-| [backtest.md](backtest.md) | `backtest.py` | Historical evidence the strategy works |
-| [workflow.md](workflow.md) | `.github/workflows/trade.yml` | The clock that runs it all |
-| [dashboard.md](dashboard.md) | `site/` | The public web page |
+| [regime.md](regime.md) | `regime.py` | Gold prices in, regime and permission block out |
+| [gates.md](gates.md) | `gates.py` | Account state in, legal envelope out. Also owns the pre-trade validator |
+| [bs.md](bs.md) | `bs.py` | Our own option maths, display only |
+| [agent.md](agent.md) | `agent.py` | The AI that ranks legal candidates and picks one, or none |
+| [audit.md](audit.md) | `audit.py` | Marks the AI's homework, classifies the outcome, publishes |
+| [backtest.md](backtest.md) | `backtest.py` | Historical evidence, V1 frozen before tuning |
+| [workflow.md](workflow.md) | `.github/workflows/trade.yml` | The clock, the secrets, the persisted state |
+| [dashboard.md](dashboard.md) | `site/` | The public record |
+| [appendix/INDEX.md](appendix/INDEX.md) | — | The superseded v1 specs, and what changed |
+
+Deliberately **not** one file per concept. State management, exception handling,
+pre-trade validation, learning memory and outcome classification are concepts, not
+modules: `gates.py` owns deterministic gating and validation, `audit.py` owns
+classification and lesson generation, `state.json` owns persistence.
 
 ---
 
 ## Glossary
-
-Defined once here, then used freely in the other docs.
 
 | Term | Plain meaning |
 |---|---|
@@ -83,17 +203,23 @@ Defined once here, then used freely in the other docs.
 | **spot** | What the stock is actually trading at right now. |
 | **expiry / DTE** | The date the contract dies. DTE = "days to expiry". We use 1–3 DTE — very short-dated. |
 | **premium** | The money paid for an option. When we *sell* one, this is money we receive. |
-| **credit spread** | We sell one option and buy a cheaper, further-away one at the same time. We keep the difference in premium. The bought one caps our worst case. This is our entire strategy. |
-| **defined risk** | Because of that second bought option, the most we can possibly lose on a trade is a known, fixed number. No surprises. |
+| **credit spread** | We sell one option and buy a cheaper, further-away one at the same time. We keep the difference. The bought one caps our worst case. This is our entire strategy. |
+| **defined risk** | Because of that second bought option, the most we can lose on a trade is a known, fixed number. |
 | **iron condor** | Two credit spreads at once — one above the market, one below. Profits when the price stays in the middle. |
-| **OTM** ("out of the money") | The strike is set somewhere the stock would have to move to reach. The further out, the safer and the less we get paid. |
-| **theta** | The rate at which an option loses value purely because time passes. When we are the seller, theta is money flowing toward us every day. |
-| **the greeks** | A set of numbers (theta, delta, and others) describing how an option's price reacts to things. We compute our own — see [bs.md](bs.md). |
-| **the chain** | The full list of every option contract available on a stock for a given expiry. |
-| **SPY / GLD / GDX / UUP / TLT** | Tradeable funds. SPY = the US stock market. GLD = gold. GDX = gold miners. UUP = the US dollar. TLT = long-term government bonds. |
+| **OTM** ("out of the money") | The strike sits somewhere the stock would have to move to reach. Further out = safer, and less paid. |
+| **theta** | The rate at which an option loses value purely because time passes. As sellers, theta flows toward us. |
+| **the greeks** | Numbers describing how an option's price reacts to things. We compute our own — see [bs.md](bs.md). |
+| **the chain** | Every option contract available on a stock for a given expiry. |
+| **SPY / GLD / GDX / UUP / TLT** | Tradeable funds. SPY = US stock market. GLD = gold. GDX = gold miners. UUP = the US dollar. TLT = long-term government bonds. |
 | **paper account** | A fake-money Alpaca account with real market prices. Everything here is paper. |
-| **MCP** | Model Context Protocol — the standard way an AI is handed a set of tools it can call. Alpaca ship an official MCP server; it is the AI's only route to the market. |
+| **MCP** | Model Context Protocol — the standard way an AI is handed tools. Alpaca ship an official MCP server; it is the AI's only route to the market. |
 | **cron** | A schedule. "Run this at 09:35 every weekday." |
 | **envelope** | Our term: the complete, pre-computed set of trades that are legal at this moment. See [gates.md](gates.md). |
+| **pre-trade validator** | The deterministic re-check between the AI's answer and the broker. Same rules, fresher data. |
+| **operating state** | `ACTIVE` / `DEGRADED` / `HALTED` / `REVIEW_REQUIRED`. Persisted between runs. |
+| **latched** | Once set, stays set until its defined reset. A later recovery in P&L does not clear it. |
+| **run id** | `YYYY-MM-DD-0935` or `-1305`. One order per run id, ever. Kills duplicate-run risk. |
+| **lesson** | A short, evidence-counted preference learned from audited outcomes. Can reorder legal candidates; can never change what is legal. |
 | **fill** | Confirmation that an order actually executed, and at what price. |
 | **drawdown** | How far the account is down from its high point. |
+| **`NO_TRADE`** | A valid, deliberate autonomous outcome. Not an error. |

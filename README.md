@@ -119,7 +119,7 @@ a glossary.
 | [workflow.md](docs/workflow.md) | `trade.yml` | The clock that runs it all |
 | [dashboard.md](docs/dashboard.md) | `site/` | The public page |
 
-[`PLAN.md`](PLAN.md) holds the strategy, the schedule, and the decisions behind both.
+[`docs/appendix/PLAN.md`](docs/appendix/PLAN.md) holds the original strategy, the schedule, and the decisions behind both.
 
 Each doc covers purpose, inputs, outputs with literal JSON, the logic, an end-to-end
 walkthrough of both a normal run and a failure run, failure modes, and a verification

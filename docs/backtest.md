@@ -1,174 +1,194 @@
-# `backtest.py` — evidence the strategy works
+# `backtest.py` — evidence, and the slow learning loop
 
-> **In plain terms:** it replays the last six months of real market history and asks
-> "if we had run this exact strategy every day, how often would we have won?" That
-> number goes in the write-up.
+> **In plain terms:** it replays about six months of real market history and asks "if we
+> had run these exact rules every day, what would have happened, and did the gold overlay
+> actually help?" That answer goes in the write-up — and it is the only route by which the
+> regime rules are ever allowed to change.
+
+> **What changed since v1** ([appendix/backtest.md](appendix/backtest.md)): the backtest is
+> no longer only evidence for a claim. It is now the **slow learning loop** — the one
+> sanctioned path from "the rules look wrong" to "the rules are different", with a human in
+> the middle. Added: the V1-frozen-before-tuning discipline, per-regime reporting, the
+> stand-down trade-off analysis, and the explicit rule that the agent may propose a change
+> but may never deploy one. Stage 4 in `BUILD_PLAN.md` — built only if time allows.
 
 ## Purpose
 
-The whole project rests on one claim: selling defined-risk credit spreads wins
-roughly 75–80% of the time, because time decay pays us regardless of which way the
-market goes.
+The project rests on one claim: selling defined-risk credit spreads wins roughly 75–80% of
+the time, because time decay pays us regardless of direction.
 
-Four trading days is not enough to demonstrate that. We might place six trades. Six
-trades prove nothing either way — a 100% win rate over six trades is luck, and so is
-a 50% one.
+Five and a half trading days is not enough to demonstrate that. We might place eight
+trades. Eight trades prove nothing either way — a 100% win rate over eight trades is luck,
+and so is a 50% one.
 
-So we test it on history instead. Six months of real SPY prices, the same rules the
-live system uses, and we count. That produces a number we can defend.
+So we test it on history instead. Six months of real prices, the same rules the live system
+uses, and we count. That produces a number we can defend.
 
-This file changes nothing about how the live system trades. It exists purely as
-evidence, and it is the difference between a write-up that asserts an edge and one
-that shows it. PLAN.md is explicit that this is evidence, not decoration.
+It has a second job the handoff added. Structural changes to the strategy — a gold
+threshold that keeps missing, a stand-down rule that costs more than it saves — must not
+happen because a losing trade made someone uncomfortable on Tuesday. They happen here, with
+evidence, reviewed by a human, and land as a version-controlled change.
 
 ## Where it sits
 
-**Outside the chain entirely.** It never runs on the schedule and never touches the
-account.
+**Outside the live chain entirely.** It never runs on the schedule, never touches the
+account, and cannot place an order.
 
-It is run by hand, once, before the competition, and its output is quoted in
-`WRITEUP.md` and in the slides. If it were deleted after the number was recorded,
-nothing would break.
+```
+FAST LOOP  (during the competition, automatic)
+  audit.py → outcome class → lesson → next decision's ranking
+
+SLOW LOOP  (offline, human-governed)
+  live outcomes + history → backtest.py → proposed change
+                                              ↓
+                                        human review
+                                              ↓
+                                    accepted → version-controlled V2
+```
+
+Run by hand, and its output is quoted in `WRITEUP.md` and the slides. If it were deleted
+after the numbers were recorded, nothing would break.
 
 Starting point: adapt `alpacahq/alpaca-skills` → `alpaca-trading-backtest` rather than
-writing a backtester from scratch. A hand-rolled backtester is a well-known way to
-produce a flattering wrong number.
+writing a backtester from scratch. A hand-rolled backtester is a well-known way to produce
+a flattering wrong number.
 
 ## Inputs
 
 | Input | Detail |
 |---|---|
 | SPY daily prices | About 6 months, via `alpaca-py` |
-| Gold-related prices | `GLD`, `GDX`, `UUP` over the same window, to replay the regime rules |
-| The live rules | Imported from `regime.py` and `gates.py`. Not re-typed |
+| `GLD`, `GDX`, `UUP`, `TLT` | Same window, to replay the regime rules |
+| The live rules | **Imported** from `regime.py` and `gates.py`. Never re-typed |
+| `rules_version` | Which threshold set is being tested — V1, or a proposed V2 |
+| Live outcomes to date | From `state.json`, once the competition has started |
 | `ALPACA_API_KEY`, `ALPACA_SECRET_KEY` | Environment variables |
 
-Importing the real rules rather than restating them is the single most important
-choice here. A backtest of a slightly different strategy than the one that actually
-trades is worse than no backtest, because it produces a confident number about the
-wrong thing.
+Importing the real rules rather than restating them is the single most important choice
+here. A backtest of a slightly different strategy than the one that actually trades is
+worse than no backtest, because it produces a confident number about the wrong thing.
+
+The same applies to the measurement convention: `latest price / previous regular-session
+close − 1`, identical to [regime.md](regime.md). A backtest that uses completed daily
+candles is testing a system that can see the future by several hours.
+
+## The V1 discipline
+
+This is the part that keeps the exercise honest:
+
+1. Record the teammate's thresholds as **V1, before running anything.** They are already
+   recorded — in [regime.md](regime.md) and in `BUILD_PLAN.md`, dated and labelled.
+2. Backtest V1 over the historical window.
+3. Measure performance **by regime**, not just in aggregate.
+4. Identify obvious failure modes.
+5. If — and only if — a failure is clear and explainable, write **one** documented V2, with
+   the reasoning stated before the result is known.
+6. Keep the V1 results alongside V2 forever. Both go in the write-up.
+
+**Do not continuously re-tune thresholds until the historical result looks attractive.**
+That is not analysis, it is fitting the past. Over a window this short it would also be
+fitting noise. One documented revision, or none.
 
 ## Outputs
 
-Printed to the terminal and saved as `backtest_results.json`:
+A short report, and the numbers quoted in `WRITEUP.md`:
 
-```json
-{
-  "period": "2026-02-20 to 2026-08-20",
-  "trades": 118,
-  "wins": 92,
-  "losses": 26,
-  "win_rate_pct": 78.0,
-  "avg_win_usd": 54.20,
-  "avg_loss_usd": -287.40,
-  "total_pnl_usd": 2511.00,
-  "max_drawdown_pct": 3.1,
-  "worst_day_usd": -862.00,
-  "by_regime": {
-    "RISK_ON":  {"trades": 61, "win_rate_pct": 82.0},
-    "NEUTRAL":  {"trades": 44, "win_rate_pct": 75.0},
-    "RISK_OFF": {"trades": 13, "win_rate_pct": 69.2}
-  }
-}
-```
+**Strategy level**
 
-Read that table honestly, because it is the interesting part. We win about four times
-out of five, but the average loss is roughly five times the average win. **The
-strategy makes money by being right often, not by being right big — and a run of bad
-luck genuinely hurts.** Saying so plainly in the write-up is more persuasive than the
-win rate alone, and a judge who trades will spot it immediately if we do not.
+- Number of trades, win rate, average P&L per trade, worst single loss.
+- Maximum drawdown, and how often the −2% daily halt would have triggered.
 
-The `by_regime` split is the part that tests the teammate's contribution
-specifically. If the gold rules add nothing, the three win rates will look the same,
-and that is worth knowing before we build the presentation around them.
+**Per regime** — the whole point of the overlay:
 
-## Logic
+| Metric | RISK_ON | NEUTRAL | RISK_OFF |
+|---|---|---|---|
+| Days classified | | | |
+| Win rate | | | |
+| Average P&L | | | |
+| Worst result | | | |
+| Max adverse SPY move after classification | | | |
 
-1. Pull daily prices for SPY and the three gold-related funds.
-2. Step through each historical trading day in order.
-3. For that day, run the real `regime.py` rules on the prices as they stood — using
-   only data that existed at the time.
-4. Run the real `gates.py` limits against a simulated account.
-5. If a trade was permitted, pick the strike by percentage distance, exactly as the
-   live system does.
-6. Estimate the premium with `bs.py`, since historical option prices are not available
-   on the free plan.
-7. Jump forward to expiry and settle: if SPY stayed on the right side of the short
-   strike, we keep the premium. If not, we lose the gap between strikes, less the
-   premium.
-8. Record the result and continue.
-9. Report totals, overall and split by regime.
+**Stand-down trade-off** — the honest test of the most valuable rule:
 
-Step 3 is where backtests usually go wrong. Using information the strategy could not
-have had at the time produces a beautiful result and a worthless one.
+- Losing put spreads the stand-down rule **avoided**.
+- Winning opportunities it **skipped**.
 
-Step 6 is an honest weakness and must be labelled as such in the write-up: we are
-estimating what the premium would have been, not reading what it was. The estimate is
-made deliberately conservative — assume we sold at a slightly worse price than the
-model says — so the resulting win rate understates rather than flatters.
+Both numbers are published, whichever way they fall. A stand-down rule that avoided four
+losses and skipped nine winners is a rule the teammate needs to see, not one to quietly
+drop from the report.
+
+The objective is **not** maximum win rate. The question is whether the gold overlay reduces
+downside in a useful way. A rule that trims the worst days while costing a little upside is
+a good rule for a system whose failure mode is a −4% halt.
 
 ## User experience flow
 
-**Running it, once, before the competition.**
+**Before the competition — establishing the claim.**
 
-1. Talvin runs `python backtest.py` on his desktop. No schedule, no CI.
-2. It prints a progress line per month so a six-month run does not look frozen.
-3. About a minute later it prints the summary table.
-4. The headline: **78% win rate over 118 simulated trades.**
-5. It writes `backtest_results.json`.
-6. That number, the trade count, the date range, and the average-win-versus-average-
-   loss caveat all go into `WRITEUP.md` and onto a slide.
-7. When a judge asks "how do you know this strategy works, you only traded four days"
-   — there is an answer, with a method attached, instead of a claim.
+1. Talvin runs `python backtest.py --rules V1` once, by hand, in the days before Aug 28.
+2. It pulls six months of prices, replays the regime rules day by day, and simulates the
+   spreads the envelope would have permitted.
+3. It prints the tables above and writes them to a file.
+4. The headline number goes into `WRITEUP.md`: not "credit spreads usually win" but "over
+   the last six months, these rules produced N trades, an X% win rate, and the stand-down
+   rule avoided Y losses at a cost of Z skipped winners."
+5. That is the difference between a write-up that asserts an edge and one that shows it.
 
-**When the result is disappointing.**
+**After the competition, or mid-week — a regime miss.**
 
-1. Same run, but it prints **61%**, with `RISK_OFF` at 48%.
-2. This is useful, not a failure. It says the gold overlay is hurting in one mood, and
-   it says so *before* the competition rather than after.
-3. Either the teammate revises those thresholds, or `RISK_OFF` becomes a
-   stand-down-entirely rule instead of a trade-differently rule.
-4. Either way the write-up gets stronger: a strategy that was tested and adjusted
-   reads as engineering. A strategy that was assumed correct reads as a guess that
-   happened to work.
+1. `audit.py` classified two runs as `REGIME_MISS`: the system read `RISK_ON` on a day that
+   turned sharply against it.
+2. The fast loop does nothing with that. It is explicitly not allowed to touch a threshold.
+3. Talvin runs the backtest against those specific dates and looks at the per-regime table.
+4. If the pattern holds historically — say, `RISK_ON` days with a rising dollar behaving
+   like `NEUTRAL` days — that becomes a written proposal: what to change, why, and what the
+   V1 numbers were.
+5. The teammate, who owns the gold rules, accepts or rejects it.
+6. If accepted, it lands as a commit with a new `rules_version`, and every subsequent
+   dashboard entry carries that version. Nothing is retroactively relabelled.
+7. Mid-competition, the honest default is to **not** change anything: five days is not
+   enough evidence to redefine an envelope. The proposal can be written up and left for the
+   write-up as future work — which reads better than a rule changed on three data points.
 
 ## Failure modes
 
 | What goes wrong | What happens |
 |---|---|
-| Historical data has gaps | Skip those days, report how many were skipped. Never interpolate prices — invented data produces invented results. |
-| Premium estimate is too generous | Win rate looks better than reality. Mitigated by biasing the estimate conservatively, and by stating the limitation in the write-up. |
-| Fewer than ~30 trades in the window | Not enough to mean anything. Say so rather than quoting a percentage from a small sample. |
-| Rules drift from the live ones | Prevented structurally by importing `regime.py` and `gates.py` instead of restating them. |
-| Six months happened to be an easy market | A real limitation. State the period tested and let the reader judge. Extending the window is the fix if time allows. |
+| History unavailable for a fund | Report the gap. Do not silently drop the rule that used it — a backtest with a missing input is testing different rules |
+| Option prices unavailable historically | Simulate the spread from the underlying with a stated pricing assumption, and label every result as modelled. Never present a modelled fill as a real one |
+| The result is unflattering | Publish it. An honest 62% is evidence; an unverifiable 80% is a claim |
+| The backtest disagrees with live results | Say so, and say by how much. Five days of live data does not overturn six months, and six months does not explain away five days |
+| Tempted to re-tune | One documented V2, or none. The rule exists precisely because the temptation is strongest when the number is close |
 
 ## Verification
 
 ```
-python backtest.py
+python backtest.py --self-test
 ```
 
-Sanity checks that must hold before the number is quoted anywhere:
+`assert`-based checks against hand-made price series, no market needed:
 
-- Trades plus skipped days equals the total trading days in the window. Nothing
-  vanishes silently.
-- Wins plus losses equals total trades.
-- No trade has a loss worse than the $500 per-trade cap. If one does, the settlement
-  maths is wrong.
-- The regime split sums to the overall trade count.
-- Re-running produces an identical result. Any randomness in a backtest is a bug.
+- The regime classifier used in the backtest is the **imported** one from `regime.py` —
+  asserted by identity, not by comparing outputs.
+- The measurement convention matches `regime.py` exactly on a shared fixture.
+- A hand-made fear day classifies `RISK_OFF` in the backtest and in live logic identically.
+- The stand-down counters increment correctly on a constructed day that triggers it.
+- Per-regime day counts sum to the total number of trading days in the window.
+- A window with a deliberately missing fund reports the gap rather than silently producing
+  a number.
 
-A win rate outside roughly 60–85% deserves suspicion. Too low suggests the rules are
-wrong; too high suggests the simulation is cheating somewhere.
+Then, on the real run: the number of `RISK_OFF` days over six months should be a small
+minority. If the rules classify half the market history as fear, the thresholds are wrong
+and no amount of P&L arithmetic will fix that.
 
 ## Open questions
 
-1. Six months, or longer? Longer is more convincing and costs nothing but runtime. Six
-   is the floor.
-2. Should the estimated premium be replaced with real historical option prices? That
-   needs paid data. Not worth $99 for a supporting figure, but the limitation must be
-   stated.
-3. Should we also backtest without the gold overlay, as a comparison? Yes, if time
-   allows — "the overlay added six points of win rate" is a far stronger claim than
-   "our strategy won 78%". This is the single highest-value optional item in the whole
-   project.
+1. How are historical option prices handled? If real historical chains are unavailable on
+   the free plan, spreads must be modelled from the underlying — which weakens the claim
+   and must be stated plainly wherever the number is quoted.
+2. Six months, or twelve? Six covers a reasonable mix of conditions and keeps the run
+   short. Twelve is more evidence but risks including a market regime that no longer
+   resembles today's. `ASSUMPTION:` six, stated as a limitation.
+3. Should the backtest also replay the learning loop? Interesting, and almost certainly
+   overfitting dressed up as validation. `ASSUMPTION:` no — backtest the rules, not the
+   preferences.
