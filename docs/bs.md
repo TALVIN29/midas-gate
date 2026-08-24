@@ -18,9 +18,17 @@ time passes, how much it moves when the stock moves, and so on. Collectively the
 **the greeks**. Normally you would use them to pick which contract to sell.
 
 We cannot. Alpaca's free market data plan labels its options feed **"indicative"**
-([their docs](https://docs.alpaca.markets/us/docs/about-market-data-api)) and the greeks
-and implied volatility that come with it are not dependable. The dependable real-time feed
-costs $99 a month.
+([their docs](https://docs.alpaca.markets/us/docs/about-market-data-api)), and a number
+the vendor itself will not call authoritative should not be choosing where our money goes.
+The dependable real-time feed costs $99 a month.
+
+> **Corrected at Stage 0.** An earlier draft assumed the free feed returned *no* greeks.
+> It does — the smoke test came back with delta, gamma, theta, vega, rho and implied
+> volatility on every SPY contract we asked for. The design does not change, but the
+> reason does, and the honest reason is the stronger one: we avoid greeks not because
+> they are missing, but because they are **modelled numbers on an indicative feed**, and a
+> percentage distance from spot is a direct measurement that needs no model at all. Being
+> handed a plausible delta is exactly the temptation this rule exists to resist.
 
 Two consequences, and the second is the interesting part.
 

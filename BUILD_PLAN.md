@@ -39,7 +39,7 @@ be **live on the first real trading day**, and ship the **full dashboard**.
 
 | Decision | Choice | Why |
 |---|---|---|
-| Risk sizing | **Regime-scaled**, ceiling $10,000 open risk: RISK_ON $10k / NEUTRAL $5k / RISK_OFF $0. Per-spread cap stays **$500** | Makes the gold thesis load-bearing rather than decorative — the regime sets money at risk, not just strike distance. Realistic ~+0.6–1.2%, tail ~−2%, −4% halt won't trip on noise |
+| Risk sizing | **Regime-scaled**, ceiling $10,000 open risk: RISK_ON $10k / NEUTRAL $5k / RISK_OFF $0. Per-**contract** cap stays **$500** (corrected at Stage 0; was written as per-spread, which capped total risk near $958) | Makes the gold thesis load-bearing rather than decorative — the regime sets money at risk, not just strike distance. Realistic ~+0.6–1.2%, tail ~−2%, −4% halt won't trip on noise |
 | Gold thresholds | Adopt the numbers from the teammate's own GPT interview as **V1**, clearly labelled, teammate amends by **Aug 27** | Unblocks the build; the numbers are his, not invented |
 | Scope | **Full handoff architecture**, built in an order where a working agent exists first | Talvin's call; staging protects the submission |
 | First live day | **Aug 28** | ~20% more of the trading window; more autonomy evidence in the commit log |
@@ -67,11 +67,30 @@ regular-session close − 1`.
 
 Each stage leaves a working system. If time runs out, features are lost, not the submission.
 
-**Stage 0 — tonight, before any other code.** Alpaca MCP smoke test: fetch a SPY option
-chain via `uvx alpaca-mcp-server`, confirm the free indicative feed returns usable bid/ask
-and expiries. **Largest technical risk in the project.** If unusable, fall back to
-`get_stock_bars` + local Black-Scholes pricing for strike selection, and record it as a
-documented setback (it is also social post #2).
+**Stage 0 — DONE, 2026-08-24.** Alpaca MCP smoke test passed; the fallback is not needed.
+
+- `alpaca-mcp-server 3.4.7`, 72 tools, stdio handshake clean. `get_account_info` and
+  `get_option_chain` both called successfully through MCP.
+- Account `PA302AWTBMU1`, created 2026-08-23, ACTIVE, $100,000, **options level 3** —
+  brand-new and multi-leg capable, so the eligibility requirement is satisfied.
+- Free indicative feed **is usable**: SPY 2026-08-26 puts quoted two-sided with 1–5¢
+  spreads, quotes seconds old. Example at spot 762.90 — 751 put bid 0.37 / ask 0.42.
+- It also returns **greeks and implied volatility**, which the specs assumed it would not.
+  Design unchanged (percentage distance still selects strikes) but the stated reason in
+  `docs/bs.md` is corrected: modelled numbers on an indicative feed, not missing numbers.
+- Tooling installed: Python 3.12.10 (already present, off PATH), `uv 0.12.5`,
+  `alpaca-py 0.44.0`, `alpaca-mcp-server` at `~/.local/bin/alpaca-mcp-server.exe`.
+
+Three spec errors found and fixed as a result:
+
+1. `ALPACA_PAPER` does nothing. The server reads **`ALPACA_PAPER_TRADE`**
+   (`server.py:117`), defaulting to paper, accepting only `true`/`1`/`yes`.
+2. `get_positions` and `close_position` do not exist — they are `get_all_positions` and
+   `close_all_positions`.
+3. **Sizing was self-contradictory.** "$500 per spread" with `max_contracts: 2` capped
+   total open risk near $958 against live prices, making the $5,000/$10,000 regime budgets
+   unreachable. Now read as **$500 per contract** with `max_contracts` carrying size
+   (NEUTRAL: 5 × ~$479 × 2 positions ≈ $4,790). `ASSUMPTION:` confirm before Aug 28.
 
 **Stage 1 — trade path (must exist by Aug 28 open).**
 - `regime.py` — V1 rules above, emitting the machine-readable permission block
@@ -94,7 +113,7 @@ asymmetric intraday caution (tighten now, loosen only next day); order-rejection
 
 **Stage 3 — story surface.**
 Full dashboard on Netlify reading `state.json`; `WRITEUP.md` one-pager; 5 social posts
-(thesis → indicative-feed setback → the risk gates → first live trade → final P&L).
+(thesis → what the smoke test taught us → the risk gates → first live trade → final P&L).
 
 **Stage 4 — if time allows.**
 Outcome/mistake taxonomy + bounded learning memory (3–5 active lessons, last 5–10 outcomes;
@@ -113,7 +132,7 @@ New: `regime.py`, `gates.py`, `bs.py`, `agent.py`, `audit.py`, `state.json`,
 `.github/workflows/trade.yml`, `site/index.html`, `WRITEUP.md`,
 later `backtest.py`.
 Edit: `README.md` + `PLAN.md` (calendar, sizing, scope), `docs/*.md` per handoff §34.
-Secrets: `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`, `ANTHROPIC_API_KEY`; `ALPACA_PAPER=true`
+Secrets: `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`, `ANTHROPIC_API_KEY`; `ALPACA_PAPER_TRADE=True`
 hardcoded in the workflow, never a secret.
 
 ## Verification

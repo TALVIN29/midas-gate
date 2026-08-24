@@ -87,8 +87,8 @@ the page and the Python can change independently.
     "strategies": ["PUT_CREDIT_SPREAD"],
     "expiries": ["2026-09-03", "2026-09-04"],
     "short_strike_min_distance_pct": 1.5,
-    "max_contracts": 2,
-    "max_risk_per_spread_usd": 500,
+    "max_contracts": 5,
+    "max_risk_per_contract_usd": 500,
     "risk_budget_usd": 5000,
     "remaining_risk_budget_usd": 4062
   },

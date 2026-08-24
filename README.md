@@ -27,13 +27,17 @@ case with a second bought leg. That wins roughly 75–80% of the time per trade,
 turns P&L from luck into an engineering problem.
 
 **The free data feed is "indicative".** Alpaca's free plan
-[labels its options data indicative](https://docs.alpaca.markets/us/docs/about-market-data-api),
-and the greeks that come with it are not dependable. The reliable feed is $99/month.
+[labels its options data indicative](https://docs.alpaca.markets/us/docs/about-market-data-api).
+It does hand you greeks and implied volatility — we confirmed that against the live chain —
+but they are modelled numbers on a feed the vendor itself will not call authoritative. The
+reliable feed is $99/month.
 
 So we never select strikes by delta. We select by **percentage distance from spot** — a
-direct measurement that cannot be wrong — and compute our own Black-Scholes greeks
+direct measurement that needs no model at all — and compute our own Black-Scholes greeks
 locally, for display only, never as an input to a decision. This removed a $99/month
-dependency and is the single most consequential design choice in the project.
+dependency and is the single most consequential design choice in the project. The
+temptation it resists is real: the feed *offers* a plausible delta, and using it would be
+one line of code.
 
 **The gold angle is a real person's expertise, not an invented gimmick.** One of us
 trades gold professionally. Gold is the market's fear gauge, and his read of it sets
@@ -100,7 +104,7 @@ still binds in the afternoon.
 
 | Limit | Value |
 |---|---|
-| Maximum loss per spread | $500 (0.5% of the account) |
+| Maximum loss per contract | $500 (0.5% of the account) |
 | Maximum total risk open | **Regime-scaled**: $10,000 RISK_ON / $5,000 NEUTRAL / $0 RISK_OFF |
 | Daily drawdown halt | −2% — latched, no new positions until tomorrow |
 | Competition drawdown halt | −4% — latched, human reset only |
@@ -184,10 +188,12 @@ Honest current state, so nothing here is mistaken for more than it is:
       audit escalation, bounded learning. First draft kept in [`appendix/`](appendix/INDEX.md)
 - [x] Gold Regime Rules **V1** recorded from the teammate's own numbers, labelled as
       pending his sign-off rather than presented as final
-- [ ] Alpaca MCP server smoke test — confirming the indicative feed returns usable
-      bid/ask on an option chain. **This is the largest open technical risk.** If the
-      chain is unusable, strike selection falls back to `get_stock_bars` plus our own
-      pricing
+- [x] **Alpaca MCP smoke test passed (Aug 24)** — `alpaca-mcp-server 3.4.7`, 72 tools,
+      account and option chain both fetched through MCP. The free feed quotes SPY puts
+      two-sided at 1–5¢ spreads, so the largest open technical risk is closed and the
+      local-pricing fallback is not needed. It also surfaced three errors in our own
+      specs — a wrong env var name, two wrong tool names, and a risk cap that
+      contradicted itself. All three fixed
 - [ ] `regime.py`, `gates.py`, `bs.py`, `agent.py`, `audit.py`
 - [ ] Dashboard
 - [ ] Backtest over ~6 months of SPY, V1 frozen before any tuning, for a win-rate

@@ -70,8 +70,8 @@ Either an envelope, or a refusal. Never a partial one.
   "expiries": ["2026-09-03", "2026-09-04"],
   "short_strike_min_distance_pct": 1.5,
   "long_strike_offset": 5.0,
-  "max_contracts": 2,
-  "max_risk_per_spread_usd": 500,
+  "max_contracts": 5,
+  "max_risk_per_contract_usd": 500,
   "risk_budget_usd": 5000,
   "remaining_risk_budget_usd": 4062,
   "remaining_daily_loss_budget_usd": 1420.50,
@@ -109,7 +109,7 @@ Absolute. Not affected by the regime, and there is no override.
 
 | Gate | Limit | Why |
 |---|---|---|
-| Risk per trade | $500 maximum possible loss on any single spread | One bad trade cannot matter much |
+| Risk per contract | $500 maximum possible loss per contract; `max_contracts` sets how many | One contract cannot matter much, and the regime budget caps the total |
 | Total risk open | The regime's budget — $10,000 / $5,000 / $0, ceiling $10,000 | The gold thesis sets money at risk, not just strike distance |
 | Daily loss | Down 2% in a day → no new positions, **latched for the day** | Stops a bad day compounding |
 | Competition loss | Down 4% overall → latched halt **and** `REVIEW_REQUIRED` | A floor under the whole thing. Human reset only |

@@ -64,13 +64,32 @@ past a halt.
 
 ```yaml
 env:
-  ALPACA_PAPER: "true"
+  ALPACA_PAPER_TRADE: "True"
 ```
 
 This is not a secret and must never become one. A secret can be changed by anyone with
 repository access, silently, without a commit. Hardcoding it means switching to real money
 would require an obvious, reviewable change to a tracked file. It is the one setting where
 visibility is worth more than configurability.
+
+**Verified against the server source** (`alpaca_mcp_server/server.py:117`):
+
+```python
+paper = os.environ.get("ALPACA_PAPER_TRADE", "true").lower() in ("true", "1", "yes")
+return TRADING_API_BASE_URLS["paper" if paper else "live"]
+```
+
+Three things follow, and all three matter:
+
+1. The name is **`ALPACA_PAPER_TRADE`**. An earlier draft of these docs said `ALPACA_PAPER`,
+   which the server ignores entirely — it would have looked set while doing nothing.
+2. The default is **paper**. Unset means paper, so a forgotten variable fails safe.
+3. Only `true` / `1` / `yes` count as paper, case-insensitively. Anything else — including a
+   typo — selects the **live** endpoint. So the workflow sets it explicitly rather than
+   relying on the safe default, and the value is a tracked, reviewable line.
+
+The API keys are read from `ALPACA_API_KEY` and `ALPACA_SECRET_KEY`
+(`server.py:102–103`) — the same names used everywhere else in this project.
 
 **Persisted state** — `site/state.json`, committed in the repository:
 

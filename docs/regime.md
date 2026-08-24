@@ -73,7 +73,7 @@ is visible later:
 {
   "regime": "NEUTRAL",
   "risk_budget_usd": 5000,
-  "max_contracts": 2,
+  "max_contracts": 5,
   "min_strike_distance_pct": 1.5,
   "max_positions": 2,
   "allowed_strategies": ["PUT_CREDIT_SPREAD"],

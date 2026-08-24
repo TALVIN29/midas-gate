@@ -48,9 +48,10 @@ a little every day simply because time passes. That works in a flat market, a mi
 market and a mildly-down market. It turns "did we get lucky" into "did we engineer this
 properly".
 
-**2. Alpaca's free option feed labels its prices "indicative".** The greeks and implied
-volatility that come with it are not trustworthy, and the real feed is $99/month. So we
-never let those numbers pick our trades. We choose contracts by **percentage distance
+**2. Alpaca's free option feed labels its prices "indicative".** It does return greeks and
+implied volatility — the Stage 0 smoke test confirmed that — but they are modelled numbers
+on a feed the vendor will not call authoritative, and the dependable feed is $99/month. So
+we never let those numbers pick our trades. We choose contracts by **percentage distance
 from where the market is trading right now** — a direct measurement, not a model output.
 We compute our own greeks and show them as context only. See [bs.md](bs.md).
 
@@ -136,23 +137,34 @@ Two design choices carry the whole safety story:
 
 ## Risk sizing
 
-Per-spread maximum loss is fixed at **$500**. Total open risk is **scaled by the regime**,
+Maximum loss is **$500 per contract**. Total open risk is **scaled by the regime**,
 because the gold thesis should set money at risk, not just strike distance:
 
-| Regime | Total open risk budget | Strategies | Min OTM distance | Max positions |
-|---|---|---|---|---|
-| `RISK_ON` | $10,000 | Iron condor, put credit spread | ~1.0% | 3 |
-| `NEUTRAL` | $5,000 | Put credit spread | ~1.5% | 2 |
-| `RISK_OFF` | $0 | None (no new risk) | ~2.5% | 1 |
+| Regime | Total open risk budget | Strategies | Min OTM distance | Max positions | Max contracts/position |
+|---|---|---|---|---|---|
+| `RISK_ON` | $10,000 | Iron condor, put credit spread | ~1.0% | 3 | 7 |
+| `NEUTRAL` | $5,000 | Put credit spread | ~1.5% | 2 | 5 |
+| `RISK_OFF` | $0 | None (no new risk) | ~2.5% | 1 | 0 |
 
 Hard, never regime-scaled: −2% daily drawdown halt (latched for the day), −4% competition
-halt (latched, human reset only), $500 per spread, no new positions after 15:30 ET, no
+halt (latched, human reset only), $500 per contract, no new positions after 15:30 ET, no
 new positions on Sep 4, close everything by 15:45 ET on the last trading day.
+
+> **Corrected at Stage 0 — `ASSUMPTION:` pending confirmation.** The cap was written as
+> "$500 per spread" with `max_contracts: 2`. Priced against the live chain, a $5-wide SPY
+> spread risks about **$479 for one contract**, so "$500 per spread" allowed roughly one
+> contract per position and capped total open risk near **$958** — the $5,000 and $10,000
+> regime budgets could never bind, and the regime-scaled sizing that justifies the whole
+> gold thesis would have been decorative. Reading the $500 as **per contract** and letting
+> `max_contracts` carry the size resolves it: 5 contracts × $479 ≈ $2,395 per position,
+> two positions ≈ $4,790, which is the NEUTRAL budget. Confirm before the first live day.
 
 Sizing rationale: at the old flat $2,000 the realistic capture over the window was about
 +0.25% on $100k, which concedes the P&L criterion. At the regime-scaled ceiling the
 realistic band is roughly +0.6% to +1.2%, with a tail around −2% — comfortably clear of
-the −4% halt on ordinary noise.
+the −4% halt on ordinary noise. Live pricing supports the upper half of that: the Aug 26
+751/746 spread paid $0.21 credit against $479 risk, about **4.4% return on risk over two
+days**, so a fully-deployed $5,000 NEUTRAL budget earns roughly $220 per cycle.
 
 ---
 
