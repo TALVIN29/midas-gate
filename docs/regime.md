@@ -38,7 +38,8 @@ file — and no permission exists only as prose that some component has to inter
 **After the data-health gate, before the envelope.**
 
 ```
-state → data health → regime.py → gates.py → agent.py → validator → execution → audit.py
+state → data health → regime.py → [event gate] → gates.py → agent.py → validator → execution → audit.py
+                                                  ^ not built yet - see "Separate event-calendar gate"
 ```
 
 It touches no account data and places no orders. It only reads prices. Safe to run at any
@@ -145,9 +146,11 @@ is not a market signal — refusing to trade all day is a decision the market ha
 
 ### Gold Rules V2
 
-> **Status: Gold Rules V2 — frozen for validation** (`rules_version: V2-validation`).
+> **Status: frozen for validation** (`rules_version: V2-validation`). These thresholds and
+> budgets **must not be tuned from backtest output.** Record results first; any amendment
+> requires explicit teammate sign-off, a new rules version, and a separate reviewed change.
 > These numbers came from the teammate — they are his, not invented, and not a
-> placeholder. They are frozen: `backtest.py` validates them, it does not tune them.
+> placeholder. `backtest.py` validates them, it does not tune them.
 > Any V3 must be documented as `V2 result → observed failure → human-approved amendment`,
 > never as a threshold quietly moved to improve historical P&L.
 
@@ -211,6 +214,31 @@ never cancel a warning that rules 1 or 2 have already confirmed.
 **6. TLT** — recorded in `signals`, shown on the dashboard, and given **zero voting
 power**. It is context for a human reader, nothing more.
 
+### Separate event-calendar gate
+
+Major scheduled US macro and Fed events are **not** Gold Regime signals. A separate,
+deterministic execution/risk gate checks whether a signed-off major event falls before a
+proposed spread expires and can restrict new risk without changing `regime.py`'s measured
+regime or V2 thresholds.
+
+**Status: report-only pending sign-off.** The event source, covered events, blackout
+window, and exact restriction have not been approved. Do not invent or activate a blackout
+window from this document; record the event context and require explicit sign-off before
+the gate can block a trade.
+
+### Separate event-calendar gate
+
+Major scheduled US macro and Fed events are **not** Gold Regime signals. A separate,
+deterministic execution/risk gate checks whether a signed-off major event falls before a
+proposed spread expires and can restrict new risk without changing `regime.py`'s measured
+regime or the V2 thresholds.
+
+**Status: not built — report-only pending sign-off.** The event source, covered events,
+blackout window, and exact restriction have not been approved. Do not invent or activate a
+blackout window from this document; record the event context and require explicit sign-off
+before the gate can block a trade. Nothing in `regime.py`, `gates.py` or `backtest.py`
+implements it today, and the pipeline diagram above marks it as absent.
+
 ### Intraday caution is asymmetric
 
 The 13:05 run re-evaluates the regime — a mid-day shift is exactly the thing a gold
@@ -270,8 +298,9 @@ change. The stand-down latch behaves the same way.
 | What goes wrong | What happens |
 |---|---|
 | SPY or GLD missing/stale | `HALTED`. No envelope, no model call. Blind is not a trading condition |
-| GDX or UUP missing | `DEGRADED`. Skip that test, note it in `reason`, continue more cautiously |
+| GDX or UUP missing | `DEGRADED`. Skip that test and note it in `reason`; do not invent a signal |
 | TLT missing | Nothing. It has no vote |
+| Event-calendar policy not signed off | Report-only. It cannot silently create a blackout window |
 | Two rules match | Most-cautious-first evaluation. Stand-down beats fear beats divergence beats dollar |
 | Regime looks more aggressive than this morning | Ignored until the next trading day. Recorded and displayed, not applied |
 | Bad API key | Same as critical data unavailable — `HALTED`. `gates.py` would fail on the account read anyway |
@@ -308,9 +337,7 @@ Passing looks like silence and exit code 0. Any failed assert prints the case th
 
 ## Open questions
 
-1. **Teammate sign-off on V1 by Aug 27.** Not blocking — V1 ships labelled if he is
-   silent — but his amendment is worth more than our defaults.
-2. Should the divergence rule downgrade one level, or only add a note? V1 downgrades.
-   Cheap to change, and it is his call.
-3. Should the 13:05 run be allowed to *raise* the budget on the second day of a sustained
-   calm stretch? Currently no: permissions loosen only at the next day's first run.
+1. **Event-calendar gate sign-off.** Approve an authoritative source, covered events,
+   blackout window, and whether the gate blocks or reduces new risk before activation.
+2. **V2 validation review.** Review same-timestamp 09:35 ET / 13:05 ET evidence before
+   changing any V2 threshold or budget.
