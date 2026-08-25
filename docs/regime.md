@@ -5,12 +5,19 @@
 > downstream is allowed to work inside.
 
 > **What changed since v1** ([appendix/regime.md](../appendix/regime.md)): the placeholder
-> thresholds are gone, replaced by **Gold Regime Rules V1** from the teammate. The output
+> thresholds are gone, replaced by the teammate's own numbers. The output
 > is now a full machine-readable permission block (risk budget, allowed strategies, a
 > put-spread permission flag), not just a label and three numbers. Added: an explicit
 > measurement convention, the day-latched stand-down, asymmetric intraday caution, and
 > the split between critical inputs (missing → `HALTED`) and secondary inputs (missing →
 > `DEGRADED`).
+
+> **What changed in V2** (teammate handoff, `MIDAS_GATE_GOLD_RULES_V2_VALIDATION_HANDOFF.md`):
+> sizing dropped from `$10,000 / $5,000 / $0` to `$2,500 / $1,500 / $1,000 / $0`;
+> **`STAND_DOWN` became a state of its own** so it is machine-distinguishable from
+> `RISK_OFF`, which now keeps a `$1,000` budget and **keeps trading at reduced size**;
+> the divergence gate tightened from `GLD > 0` to `GLD >= +0.25%`; and the strong-dollar
+> modifier gained a `SPY <= 0` guard so it cannot fire while stocks are clearly positive.
 
 ## Purpose
 
@@ -72,91 +79,132 @@ is visible later:
 ```json
 {
   "regime": "NEUTRAL",
-  "risk_budget_usd": 5000,
-  "max_contracts": 5,
+  "regime_measured": "NEUTRAL",
+  "operating_state": "ACTIVE",
+  "stand_down": false,
+  "put_spreads_allowed": true,
+  "risk_budget_usd": 1500,
+  "max_contracts": 3,
   "min_strike_distance_pct": 1.5,
   "max_positions": 2,
   "allowed_strategies": ["PUT_CREDIT_SPREAD"],
-  "put_spreads_allowed": true,
-  "rules_version": "V1-pending-signoff",
+  "rules_version": "V2-validation",
   "signals": {
-    "gld_change_pct": 0.62,
-    "spy_change_pct": -0.18,
-    "gdx_change_pct": 0.05,
-    "gld_gdx_divergence_pp": 0.57,
-    "uup_change_pct": 0.31,
-    "tlt_change_pct": -0.10
+    "SPY": -0.18,
+    "GLD": 0.62,
+    "GDX": 0.05,
+    "UUP": 0.31,
+    "TLT": -0.10
   },
-  "reason": "Gold up while stocks slipped, but modestly. Dollar firm — caution upgraded one level from RISK_ON. Not enough to call it fear."
+  "reason": "dollar firm with gold bid and stocks soft - caution upgraded"
 }
 ```
+
+`signals` is keyed by ticker, one percentage change per symbol, exactly the shape
+`classify()` takes as input — so a stored block can be replayed through the rules
+unchanged. The GLD−GDX divergence is not stored; it is `GLD − GDX`, derived where needed.
 
 `signals` and `reason` exist so a human reading the dashboard can see *why* the day was
 labelled the way it was. Judges will look at this. `rules_version` exists so that a
 result can never be attributed to the wrong set of thresholds.
 
+### Machine-readable states
+
+`RISK_OFF` and `STAND_DOWN` are different permissions and downstream logic must never
+have to infer the difference from prose. Every consumer reads the fields, not the text:
+
+```json
+{ "regime": "RISK_OFF",   "stand_down": false, "risk_budget_usd": 1000, "put_spreads_allowed": true  }
+{ "regime": "STAND_DOWN", "stand_down": true,  "risk_budget_usd": 0,    "put_spreads_allowed": false }
+```
+
+The first still trades — smaller, further out, one position. The second trades nothing.
+
 ## Logic
 
-Three regimes, in order of how much freedom they give:
+Four states, in order of how much freedom they give:
 
 | Regime | What it means | What we are allowed to do |
 |---|---|---|
-| `RISK_ON` | Calm. Gold quiet, stocks steady | Iron condors and put spreads. Strikes ~1.0% away. Up to 3 positions. $10,000 open risk |
-| `NEUTRAL` | Ordinary. Nothing decisive | Put credit spreads only. ~1.5% away. Up to 2 positions. $5,000 |
-| `RISK_OFF` | Fear rising | No new risk. ~2.5% away. 1 position. $0 |
+| `RISK_ON` | Calm. Gold quiet, stocks steady | Iron condors and put spreads. Strikes ~1.0% away. Up to 3 positions. **$2,500** open risk |
+| `NEUTRAL` | Ordinary. Nothing decisive | Put credit spreads only. ~1.5% away. Up to 2 positions. **$1,500** |
+| `RISK_OFF` | Fear rising | Put credit spreads, reduced size. ~2.5% away. 1 position. **$1,000** |
+| `STAND_DOWN` | Confirmed flight to safety | Nothing. No new risk, put spreads forbidden. **$0** |
+
+`max_contracts` is always `risk_budget_usd ÷ $500` — 5 / 3 / 2 / 0 — because `$500` is the
+hard per-spread loss cap in `gates.py` and is never regime-scaled.
 
 Note the direction of the safety valve: the more nervous the regime, the **further out**
 the strikes, the **fewer** the positions and the **smaller** the money at risk. Fear does
 not make us trade harder.
 
-### Gold Regime Rules V1
+**`STAND_DOWN` is reachable only by rule 1 (or its latch).** The divergence modifier, the
+dollar modifier and the missing-secondary-input downgrade all clamp at `RISK_OFF`. Two
+reasons: the handoff forbids requiring GDX divergence for a stand-down, and a data outage
+is not a market signal — refusing to trade all day is a decision the market has to earn.
 
-> **Status: V1, pending teammate sign-off by Aug 27.** These numbers came from the
-> teammate's own interview answers — they are his, not invented, and not a placeholder.
-> If he amends them, this block and `rules_version` change together and nothing else
-> moves. If he does not, V1 ships as-is, labelled as V1 on the dashboard and in the
-> write-up.
+### Gold Rules V2
 
-Evaluated **most-cautious-first**. The first matching rule wins.
+> **Status: Gold Rules V2 — frozen for validation** (`rules_version: V2-validation`).
+> These numbers came from the teammate — they are his, not invented, and not a
+> placeholder. They are frozen: `backtest.py` validates them, it does not tune them.
+> Any V3 must be documented as `V2 result → observed failure → human-approved amendment`,
+> never as a threshold quietly moved to improve historical P&L.
 
-**1. Stand-down** — `put_spreads_allowed: false`
+Evaluated **most-cautious-first**. Where rules overlap, the most cautious result wins.
+
+**1. Stand-down** — `STAND_DOWN`, `stand_down: true`, `put_spreads_allowed: false`, `$0`
 
 ```
 GLD >= +1.00%  AND  SPY <= -1.00%
 ```
 
 **Latched for the rest of the trading day.** Once set, a recovery in either number does
-not clear it. This is the single most valuable rule in the set: a rule that says when
-*not* to trade is worth more over six days than any rule about when to trade.
+not clear it, and the 13:05 run cannot release it. This is the single most valuable rule
+in the set: a rule that says when *not* to trade is worth more over six days than any rule
+about when to trade. When it fires, rules 3 and 4 are not evaluated — there is nothing
+left to downgrade.
 
-**2. Fear rising** — `RISK_OFF`
+**2. Fear rising** — `RISK_OFF`, `stand_down: false`, `$1,000`
 
 ```
 GLD >= +0.75%  AND  SPY <= -0.50%
 ```
 
+Reduced size, **not** a stand-down. Put spreads are still permitted; the budget, the
+position count and the strike distance do the work. Making this equivalent to a stand-down
+is explicitly forbidden by the handoff.
+
 **3. Divergence** — caution
 
 ```
-GLD − GDX >= 0.75 percentage points,  with GLD > 0 and GDX <= 0
+GLD − GDX >= 0.75 percentage points,  with GLD >= +0.25% and GDX <= 0
 ```
 
 Gold rising while the miners do not confirm reads as flight-to-safety buying rather than
-a healthy gold move. Downgrades the regime one level.
+a healthy gold move. Downgrades the regime one level (`RISK_ON→NEUTRAL`,
+`NEUTRAL→RISK_OFF`). The `GLD >= +0.25%` floor is V2's tightening of V1's `GLD > 0`: a
+gold move of two basis points is noise, and pairing it with a soft GDX should not cost us
+a caution level.
 
 **4. Dollar modifier** — asymmetric, never a promoter
 
 ```
-UUP >= +0.30%  AND  GLD >= +0.50%
+UUP >= +0.30%  AND  GLD >= +0.50%  AND  SPY <= 0%
     → upgrade caution one level (RISK_ON→NEUTRAL, NEUTRAL→RISK_OFF). Never the reverse.
 
-UUP <= -0.30%  with GLD rising
-    → gold alone cannot trigger RISK_OFF; SPY or GDX must confirm.
+UUP <= -0.30%
+    → explanatory context only. Recorded in `reason`. No permission change, ever.
 ```
 
 Gold and the dollar usually move opposite. Gold *and* the dollar rising together is a
-stronger fear signal than gold alone. Gold rising on a falling dollar may be nothing more
-than currency mechanics.
+stronger fear signal than gold alone — but only while stocks are not clearly positive,
+which is what the `SPY <= 0` term buys us. A firm dollar on a green tape is ordinary
+market mechanics, not fear.
+
+The weak-dollar half is **note-only by design**. Gold rising on a falling dollar may be
+nothing more than currency mechanics, and that is worth telling the reader — but it must
+never cancel a warning that rules 1 or 2 have already confirmed.
 
 **5. Otherwise** — `RISK_ON`
 
@@ -188,7 +236,7 @@ change. The stand-down latch behaves the same way.
    gap — under the 0.75 pp divergence bar, so that rule does not fire either. Base regime:
    `RISK_ON`. But UUP is up 0.31% with gold above +0.50%, so the dollar modifier upgrades
    caution one level: **`NEUTRAL`**.
-5. It prints one line: `REGIME=NEUTRAL budget=$5000 dist=1.5% puts=allowed rules=V1`.
+5. It prints one line: `REGIME=NEUTRAL budget=$1500 dist=1.5% puts=allowed rules=V2-validation`.
 6. It hands the permission block to `gates.py` and exits.
 7. Next morning in Malaysia, Talvin opens the dashboard: a **NEUTRAL** badge, the five
    signal numbers, and that sentence underneath. Three seconds to understand yesterday.
@@ -196,11 +244,12 @@ change. The stand-down latch behaves the same way.
 **A stand-down day.**
 
 1. 09:35. Gold up 1.2%, SPY down 1.4%. Rule 1 fires.
-2. Output: `RISK_OFF`, `put_spreads_allowed: false`, `risk_budget_usd: 0`, latched.
+2. Output: `STAND_DOWN`, `stand_down: true`, `put_spreads_allowed: false`,
+   `risk_budget_usd: 0`, latched.
 3. `gates.py` produces no envelope. `agent.py` is never called. No model cost.
 4. 13:05: markets have calmed, gold back to +0.3%. The rule re-measures as `RISK_ON` —
    and is ignored, because the latch holds for the day.
-5. The dashboard reads: **RISK_OFF (latched) — stand-down triggered 09:35: GLD +1.2%,
+5. The dashboard reads: **STAND_DOWN (latched) — stand-down triggered 09:35: GLD +1.2%,
    SPY −1.4%. Measured regime at 13:05 was RISK_ON; permissions held.**
 6. This is the system's best day even though it made no money. It is also the best social
    post of the week.
@@ -237,15 +286,23 @@ python regime.py
 
 `assert`-based self-checks against hand-made price data, no market connection needed:
 
-- One calm case produces `RISK_ON` with the $10,000 budget.
-- One fear case (`GLD +0.9%`, `SPY −0.7%`) produces `RISK_OFF` with a $0 budget.
-- The stand-down case sets `put_spreads_allowed: false` and stays false when re-evaluated
-  later in the same day with calm inputs.
+- One calm case produces `RISK_ON` with the $2,500 budget and 5 contracts.
+- One fear case (`GLD +0.9%`, `SPY −0.7%`) produces `RISK_OFF` with a **$1,000** budget,
+  `stand_down: false` and put spreads still allowed — the assertion that pins "`RISK_OFF`
+  is not a stand-down".
+- The stand-down case produces `STAND_DOWN` with a $0 budget and an empty strategy list,
+  and stays there when re-evaluated later the same day with calm inputs — recording
+  `regime_measured: RISK_ON` while refusing to act on it.
+- `RISK_OFF` and `STAND_DOWN` differ in fields, not prose.
 - A missing **critical** input produces `HALTED`, never a regime.
-- A missing **secondary** input produces `DEGRADED` and still produces a regime.
-- The dollar modifier only ever upgrades caution, never downgrades it.
-- Every regime returns a complete permission block, and every number in it is inside its
-  allowed band.
+- A missing **secondary** input produces `DEGRADED` and still produces a regime — and can
+  never manufacture a `STAND_DOWN`, nor loosen a latched one.
+- The dollar modifier only ever upgrades caution, and not at all while `SPY > 0`.
+- Divergence needs `GLD ≥ +0.25%`; `GLD +0.10%` against a soft GDX does not fire.
+- Weak dollar appears in `reason` and changes no permission, including on a fear day.
+- Modifiers can stack to `RISK_OFF` but never past it.
+- Every regime returns a complete permission block, every number in it is inside its
+  allowed band, and `max_contracts == risk_budget_usd ÷ $500` in every row.
 
 Passing looks like silence and exit code 0. Any failed assert prints the case that broke.
 

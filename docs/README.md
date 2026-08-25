@@ -142,9 +142,10 @@ because the gold thesis should set money at risk, not just strike distance:
 
 | Regime | Total open risk budget | Strategies | Min OTM distance | Max positions | Max contracts/position |
 |---|---|---|---|---|---|
-| `RISK_ON` | $10,000 | Iron condor, put credit spread | ~1.0% | 3 | 7 |
-| `NEUTRAL` | $5,000 | Put credit spread | ~1.5% | 2 | 5 |
-| `RISK_OFF` | $0 | None (no new risk) | ~2.5% | 1 | 0 |
+| `RISK_ON` | $2,500 | Iron condor, put credit spread | ~1.0% | 3 | 5 |
+| `NEUTRAL` | $1,500 | Put credit spread | ~1.5% | 2 | 3 |
+| `RISK_OFF` | $1,000 | Put credit spread, reduced size | ~2.5% | 1 | 2 |
+| `STAND_DOWN` | $0 | None — put spreads forbidden, latched for the day | ~2.5% | 0 | 0 |
 
 Hard, never regime-scaled: −2% daily drawdown halt (latched for the day), −4% competition
 halt (latched, human reset only), $500 per contract, no new positions after 15:30 ET, no
@@ -153,18 +154,25 @@ new positions on Sep 4, close everything by 15:45 ET on the last trading day.
 > **Corrected at Stage 0 — `ASSUMPTION:` pending confirmation.** The cap was written as
 > "$500 per spread" with `max_contracts: 2`. Priced against the live chain, a $5-wide SPY
 > spread risks about **$479 for one contract**, so "$500 per spread" allowed roughly one
-> contract per position and capped total open risk near **$958** — the $5,000 and $10,000
-> regime budgets could never bind, and the regime-scaled sizing that justifies the whole
-> gold thesis would have been decorative. Reading the $500 as **per contract** and letting
-> `max_contracts` carry the size resolves it: 5 contracts × $479 ≈ $2,395 per position,
-> two positions ≈ $4,790, which is the NEUTRAL budget. Confirm before the first live day.
+> contract per position and capped total open risk near **$958**. Reading the $500 as
+> **per contract** and letting `max_contracts` carry the size resolves it. Confirm before
+> the first live day.
 
-Sizing rationale: at the old flat $2,000 the realistic capture over the window was about
-+0.25% on $100k, which concedes the P&L criterion. At the regime-scaled ceiling the
-realistic band is roughly +0.6% to +1.2%, with a tail around −2% — comfortably clear of
-the −4% halt on ordinary noise. Live pricing supports the upper half of that: the Aug 26
-751/746 spread paid $0.21 credit against $479 risk, about **4.4% return on risk over two
-days**, so a fully-deployed $5,000 NEUTRAL budget earns roughly $220 per cycle.
+Under V2 sizing `max_contracts` is exactly `budget ÷ $500` — 5 / 3 / 2 / 0 — so the two
+limits agree by construction and neither is decorative. In `NEUTRAL`, one full position is
+3 × $479 ≈ $1,437 against a $1,500 budget: the first position very nearly exhausts it and
+the second is refused by `RISK_BUDGET_EXHAUSTED`. That is intended. The budget binds first;
+`max_positions` is the looser of the two.
+
+**Sizing rationale, and what V2 gave up.** V1 sized at `$10,000 / $5,000 / $0` for a
+realistic band of roughly +0.6% to +1.2% on $100k. V2 cuts the budgets to roughly a
+quarter of that, which cuts the expected capture to roughly a quarter with it — order
+**+0.15% to +0.3%**. This is a deliberate trade, made by the teammate: the competition's
+downside is latched halts and a blown thesis, and the upside of a bigger number is one
+placing. Live pricing for scale: the Aug 26 751/746 spread paid $0.21 credit against $479
+risk, about **4.4% return on risk over two days**, so a fully-deployed $1,500 `NEUTRAL`
+budget earns on the order of **$66 per cycle**. `RISK_OFF` keeping $1,000 rather than V1's
+$0 partly offsets this — V2 trades on days V1 sat out entirely.
 
 ---
 

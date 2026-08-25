@@ -209,13 +209,16 @@ def validate(proposal: dict, envelope: dict, spot_now: float, account_now: dict,
 
 def _self_check() -> None:
     now = datetime(2026, 9, 2, 13, 5, tzinfo=ET)
-    neutral = {"regime": "NEUTRAL", "operating_state": "ACTIVE", "risk_budget_usd": 5000,
-               "max_contracts": 5, "min_strike_distance_pct": 1.5, "max_positions": 2,
-               "allowed_strategies": ["PUT_CREDIT_SPREAD"], "put_spreads_allowed": True}
+    # V2 sizing. Built from regime.PERMISSIONS so the fixture cannot drift away
+    # from the frozen table it is meant to represent.
+    from regime import PERMISSIONS
+
+    neutral = {"regime": "NEUTRAL", "operating_state": "ACTIVE", "stand_down": False,
+               "put_spreads_allowed": True, **PERMISSIONS["NEUTRAL"]}
     acct = {"equity": "100340", "last_equity": "100000"}
     env = build_envelope(neutral, acct, [], now, "2026-09-02-1305", spot=651.20)
-    assert env["allowed"] and env["max_contracts"] == 5, env
-    assert env["remaining_risk_budget_usd"] == 5000
+    assert env["allowed"] and env["max_contracts"] == 3, env
+    assert env["remaining_risk_budget_usd"] == 1500
 
     # Oversized single contract is rejected by the per-contract cap.
     assert spread_max_loss(width=6.0, credit=0.20) > MAX_LOSS_PER_CONTRACT_USD
@@ -243,18 +246,26 @@ def _self_check() -> None:
                           spot=651.2)
     assert last["reason"] == "NO_NEW_POSITIONS" and last["must_close_all"] is True
 
-    # Budget arithmetic: $4,700 already at risk leaves no room for a contract.
-    full = build_envelope(neutral, acct, [{"max_loss": 4700}], now, "r", spot=651.2)
+    # Budget arithmetic: $1,200 of the $1,500 already at risk leaves no room.
+    full = build_envelope(neutral, acct, [{"max_loss": 1200}], now, "r", spot=651.2)
     assert full["reason"] == "RISK_BUDGET_EXHAUSTED", full
     # Partial room caps the contract count rather than refusing.
-    partial = build_envelope(neutral, acct, [{"max_loss": 3600}], now, "r", spot=651.2)
+    partial = build_envelope(neutral, acct, [{"max_loss": 400}], now, "r", spot=651.2)
     assert partial["allowed"] and partial["max_contracts"] == 2, partial
 
-    # RISK_OFF and stand-down both produce a clean NO_TRADE, not an error.
-    off = dict(neutral, regime="RISK_OFF", risk_budget_usd=0, allowed_strategies=[])
-    assert build_envelope(off, acct, [], now, "r", spot=651.2)["reason"] == "NO_TRADE"
-    sd = dict(neutral, allowed_strategies=[], stand_down=True, put_spreads_allowed=False)
-    assert build_envelope(sd, acct, [], now, "r", spot=651.2)["reason"] == "NO_TRADE"
+    # V2: RISK_OFF still trades, at reduced size. It is NOT a stand-down.
+    off = {"regime": "RISK_OFF", "operating_state": "ACTIVE", "stand_down": False,
+           "put_spreads_allowed": True, **PERMISSIONS["RISK_OFF"]}
+    off_env = build_envelope(off, acct, [], now, "r", spot=651.2)
+    assert off_env["allowed"] and off_env["max_contracts"] == 2, off_env
+    assert off_env["risk_budget_usd"] == 1000 and off_env["put_spreads_allowed"] is True
+
+    # Stand-down is the state that produces a clean NO_TRADE, not an error.
+    sd = {"regime": "STAND_DOWN", "operating_state": "ACTIVE", "stand_down": True,
+          "put_spreads_allowed": False, **PERMISSIONS["STAND_DOWN"]}
+    sd_env = build_envelope(sd, acct, [], now, "r", spot=651.2)
+    assert sd_env["reason"] == "NO_TRADE" and sd_env["allowed"] is False, sd_env
+    assert "stand-down latched" in sd_env["detail"], sd_env
 
     # Position cap and duplicate run.
     capped = build_envelope(neutral, acct, [{"max_loss": 400}, {"max_loss": 400}], now, "r",
@@ -282,7 +293,7 @@ def _self_check() -> None:
 
     for bad, expect in (
         (dict(good, strategy="IRON_CONDOR"), "not permitted"),
-        (dict(good, contracts=9), "outside 1..5"),
+        (dict(good, contracts=9), "outside 1..3"),
         (dict(good, expiry="2026-12-18"), "outside the legal window"),
         (dict(good, long_strike=629), "per contract"),
     ):
@@ -313,10 +324,10 @@ def _self_check() -> None:
 
 if __name__ == "__main__":
     _self_check()
+    from regime import PERMISSIONS
     print(json.dumps(build_envelope(
-        {"regime": "NEUTRAL", "operating_state": "ACTIVE", "risk_budget_usd": 5000,
-         "max_contracts": 5, "min_strike_distance_pct": 1.5, "max_positions": 2,
-         "allowed_strategies": ["PUT_CREDIT_SPREAD"], "put_spreads_allowed": True},
+        {"regime": "NEUTRAL", "operating_state": "ACTIVE", "stand_down": False,
+         "put_spreads_allowed": True, **PERMISSIONS["NEUTRAL"]},
         {"equity": "100340", "last_equity": "100000"}, [],
         datetime.now(ET), datetime.now(ET).strftime("%Y-%m-%d-%H%M"), spot=651.20),
         indent=2))

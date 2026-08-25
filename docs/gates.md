@@ -70,10 +70,10 @@ Either an envelope, or a refusal. Never a partial one.
   "expiries": ["2026-09-03", "2026-09-04"],
   "short_strike_min_distance_pct": 1.5,
   "long_strike_offset": 5.0,
-  "max_contracts": 5,
+  "max_contracts": 2,
   "max_risk_per_contract_usd": 500,
-  "risk_budget_usd": 5000,
-  "remaining_risk_budget_usd": 4062,
+  "risk_budget_usd": 1500,
+  "remaining_risk_budget_usd": 1062,
   "remaining_daily_loss_budget_usd": 1420.50,
   "open_positions": 1,
   "max_positions": 2,
@@ -110,7 +110,7 @@ Absolute. Not affected by the regime, and there is no override.
 | Gate | Limit | Why |
 |---|---|---|
 | Risk per contract | $500 maximum possible loss per contract; `max_contracts` sets how many | One contract cannot matter much, and the regime budget caps the total |
-| Total risk open | The regime's budget — $10,000 / $5,000 / $0, ceiling $10,000 | The gold thesis sets money at risk, not just strike distance |
+| Total risk open | The regime's budget — $2,500 / $1,500 / $1,000 / $0, ceiling $2,500 | The gold thesis sets money at risk, not just strike distance |
 | Daily loss | Down 2% in a day → no new positions, **latched for the day** | Stops a bad day compounding |
 | Competition loss | Down 4% overall → latched halt **and** `REVIEW_REQUIRED` | A floor under the whole thing. Human reset only |
 | Late in the day | No new positions after 15:30 ET | The last half hour is jumpy and there is no time to react |
@@ -225,17 +225,18 @@ portfolio exposure.
 **A normal midday run.**
 
 1. The clock fires with run id `2026-09-02-1305`. `regime.py` returned `NEUTRAL`, budget
-   $5,000.
+   $1,500.
 2. State is clean, no latched halts, and this run id has placed nothing.
 3. Account $100,340, up $340 today. Time 13:05 ET, before the cutoff, not Sep 4.
 4. One position open risking $438. Cap is 2 positions, so there is room.
-5. Remaining budget: $5,000 − $438 = $4,562. More than $500, so a trade fits.
+5. Remaining budget: $1,500 − $438 = $1,062. More than $500, so a trade fits — and it
+   caps the size at 2 contracts, below the regime's own limit of 3.
 6. It emits the envelope and logs:
-   `ENVELOPE ok run=2026-09-02-1305 PUT_CREDIT_SPREAD >=1.5% OTM <=2ct budget_left=$4562`
+   `ENVELOPE ok run=2026-09-02-1305 PUT_CREDIT_SPREAD >=1.5% OTM <=2ct budget_left=$1062`
 7. The AI answers with a 640/635 spread. The validator refreshes: SPY now 650.90, the 640
    strike is 1.68% out, still clear. Size, loss, totals, state, duplicate — all pass.
 8. The order goes to Alpaca.
-9. On the dashboard, the Risk panel shows $876 of $5,000 used and 2 of 2 positions filled.
+9. On the dashboard, the Risk panel shows $876 of $1,500 used and 2 of 2 positions filled.
 
 **The market moves while the model thinks.**
 
@@ -299,9 +300,12 @@ python gates.py
 - An account down 4.5% overall halts for the competition **and** sets `REVIEW_REQUIRED`.
 - A latched daily halt stays latched when P&L later recovers to −1.6%.
 - A request at 15:45 ET returns no envelope. A request dated Sep 4 returns no envelope.
-- With $4,700 of a $5,000 budget already at risk, no new trade fits — refusal.
-- `RISK_OFF` (budget $0) produces an empty envelope and a clean `NO_TRADE`.
-- Stand-down (`put_spreads_allowed: false`) blocks put spreads specifically.
+- With $1,200 of a $1,500 budget already at risk, no new trade fits — refusal.
+- `RISK_OFF` (budget $1,000) still produces a **working** envelope, capped at 2 contracts
+  and 1 position. It is deliberately not a stand-down.
+- `STAND_DOWN` (budget $0, empty strategy list) produces a clean `NO_TRADE`.
+- Stand-down (`put_spreads_allowed: false`) blocks put spreads specifically, and the
+  validator re-checks the flag independently of the strategy list.
 - A run id that already placed an order places nothing.
 - Every refusal has `allowed: false` and **no** envelope fields beside it.
 

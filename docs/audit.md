@@ -92,7 +92,7 @@ finding.
     "realised": 340.00,
     "unrealised": 62.50,
     "open_risk": 876.00,
-    "risk_budget": 5000
+    "risk_budget": 1500
   }
 }
 ```
@@ -209,11 +209,11 @@ gold trader and Talvin, and land as a version-controlled change. See
 1. 13:12 ET. The agent placed a 640/635 put spread three minutes ago.
 2. Positions read from Alpaca: two legs, short 640, long 635, one contract, filled for
    $0.62 credit. Both legs present — no partial.
-3. Envelope in force: put credit spreads, at least 1.5% out, up to 2 contracts, $5,000
+3. Envelope in force: put credit spreads, at least 1.5% out, up to 2 contracts, $1,500
    budget.
 4. SPY was 651.20 at fill. The 640 strike is 1.72% below that. Clears the floor.
 5. Worst case: the $5 strike gap less the $0.62 collected, times 100 = $438. Under the
-   $500 cap. Total open risk $876, under $5,000.
+   $500 cap. Total open risk $876, under $1,500.
 6. Every check passes. `AUDIT_PASS`, no violations, `outcome_class: NO_ERROR`.
 7. Account $100,402.50. Up $402.50 overall, $62.50 today.
 8. `bs.py` returns about $29/day of time decay in our favour, for display.

@@ -105,7 +105,7 @@ still binds in the afternoon.
 | Limit | Value |
 |---|---|
 | Maximum loss per contract | $500 (0.5% of the account) |
-| Maximum total risk open | **Regime-scaled**: $10,000 RISK_ON / $5,000 NEUTRAL / $0 RISK_OFF |
+| Maximum total risk open | **Regime-scaled** (Gold Rules V2): $2,500 RISK_ON / $1,500 NEUTRAL / $1,000 RISK_OFF / $0 STAND_DOWN |
 | Daily drawdown halt | −2% — latched, no new positions until tomorrow |
 | Competition drawdown halt | −4% — latched, human reset only |
 | New position cutoff | 15:30 ET, and none at all on submission day |

@@ -39,27 +39,31 @@ be **live on the first real trading day**, and ship the **full dashboard**.
 
 | Decision | Choice | Why |
 |---|---|---|
-| Risk sizing | **Regime-scaled**, ceiling $10,000 open risk: RISK_ON $10k / NEUTRAL $5k / RISK_OFF $0. Per-**contract** cap stays **$500** (corrected at Stage 0; was written as per-spread, which capped total risk near $958) | Makes the gold thesis load-bearing rather than decorative — the regime sets money at risk, not just strike distance. Realistic ~+0.6–1.2%, tail ~−2%, −4% halt won't trip on noise |
+| Risk sizing | **Regime-scaled**, ceiling $2,500 open risk (Gold Rules V2): RISK_ON $2,500 / NEUTRAL $1,500 / RISK_OFF $1,000 / STAND_DOWN $0. Per-**contract** cap stays **$500** (corrected at Stage 0; was written as per-spread, which capped total risk near $958) | Makes the gold thesis load-bearing rather than decorative — the regime sets money at risk, not just strike distance. V2 deliberately trades size for survivability: realistic ~+0.15–0.3%, tail well inside the −4% halt |
 | Gold thresholds | Adopt the numbers from the teammate's own GPT interview as **V1**, clearly labelled, teammate amends by **Aug 27** | Unblocks the build; the numbers are his, not invented |
 | Scope | **Full handoff architecture**, built in an order where a working agent exists first | Talvin's call; staging protects the submission |
 | First live day | **Aug 28** | ~20% more of the trading window; more autonomy evidence in the commit log |
 | Dashboard | **Full handoff dashboard** (operating state, exception reason, pre-trade validation, learning lesson, review history) | Presentation criterion |
 | Social | Claude drafts all 5 posts; Talvin + teammate post from both accounts | It is a whole judging criterion and cheap |
 
-### Gold Regime Rules V1 (pending teammate sign-off, mark as such in code)
+### Gold Rules V2 — frozen for validation (`rules_version: V2-validation`)
 
 Measurement convention everywhere, live and backtest: `return = latest price / previous
 regular-session close − 1`.
 
-- **Fear rising:** `GLD ≥ +0.75%` AND `SPY ≤ −0.50%`
-- **Divergence:** `GLD − GDX ≥ 0.75 pp`, with `GLD > 0` and `GDX ≤ 0` → caution
-- **Dollar modifier:** `UUP ≥ +0.30%` AND `GLD ≥ +0.50%` → upgrade caution **one level**
-  (RISK_ON→NEUTRAL, NEUTRAL→RISK_OFF), never the reverse.
-  `UUP ≤ −0.30%` with GLD rising → gold alone cannot trigger RISK_OFF; SPY/GDX must confirm
-- **Stand-down (`put_spreads_allowed: false`):** `GLD ≥ +1.00%` AND `SPY ≤ −1.00%`,
-  **latched for the rest of the trading day**
+- **Stand-down (`STAND_DOWN`, `$0`, put spreads forbidden):** `GLD ≥ +1.00%` AND
+  `SPY ≤ −1.00%`, **latched for the rest of the trading day**. 13:05 cannot release it
+- **Fear rising (`RISK_OFF`, `$1,000`):** `GLD ≥ +0.75%` AND `SPY ≤ −0.50%`. Reduced size,
+  **not** a stand-down — put spreads still permitted
+- **Divergence:** `GLD − GDX ≥ 0.75 pp`, with `GLD ≥ +0.25%` and `GDX ≤ 0` → caution
+- **Dollar modifier:** `UUP ≥ +0.30%` AND `GLD ≥ +0.50%` AND `SPY ≤ 0%` → upgrade caution
+  **one level** (RISK_ON→NEUTRAL, NEUTRAL→RISK_OFF), never the reverse.
+  `UUP ≤ −0.30%` → explanatory context only, recorded in `reason`, no permission change
 - **TLT:** display/context only, zero voting power
-- Rules evaluated **most-cautious-first**
+- Rules evaluated **most-cautious-first**; where they overlap the most cautious wins
+- `STAND_DOWN` is reachable **only** by the stand-down rule or its latch — never by a
+  modifier and never by a missing input
+- Intraday caution is one-way: tighten immediately, loosen only on the next trading day
 
 ---
 
@@ -88,9 +92,9 @@ Three spec errors found and fixed as a result:
 2. `get_positions` and `close_position` do not exist — they are `get_all_positions` and
    `close_all_positions`.
 3. **Sizing was self-contradictory.** "$500 per spread" with `max_contracts: 2` capped
-   total open risk near $958 against live prices, making the $5,000/$10,000 regime budgets
+   total open risk near $958 against live prices, making the regime budgets
    unreachable. Now read as **$500 per contract** with `max_contracts` carrying size
-   (NEUTRAL: 5 × ~$479 × 2 positions ≈ $4,790). `ASSUMPTION:` confirm before Aug 28.
+   (V2 NEUTRAL: 3 × ~$479 ≈ $1,437, so the $1,500 budget binds on the first position). `ASSUMPTION:` confirm before Aug 28.
 
 **Stage 1 — trade path (must exist by Aug 28 open).**
 - `regime.py` — V1 rules above, emitting the machine-readable permission block

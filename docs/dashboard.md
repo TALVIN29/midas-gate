@@ -62,7 +62,7 @@ the page and the Python can change independently.
     "start": "2026-08-28",
     "end": "2026-09-04",
     "account_id": "PA3XXXXXXXXX",
-    "rules_version": "V1-pending-signoff"
+    "rules_version": "V2-validation"
   },
   "status": {
     "operating_state": "ACTIVE",
@@ -87,10 +87,10 @@ the page and the Python can change independently.
     "strategies": ["PUT_CREDIT_SPREAD"],
     "expiries": ["2026-09-03", "2026-09-04"],
     "short_strike_min_distance_pct": 1.5,
-    "max_contracts": 5,
+    "max_contracts": 2,
     "max_risk_per_contract_usd": 500,
-    "risk_budget_usd": 5000,
-    "remaining_risk_budget_usd": 4062
+    "risk_budget_usd": 1500,
+    "remaining_risk_budget_usd": 1062
   },
   "pnl": {
     "account_value": 100402.50,
@@ -105,7 +105,7 @@ the page and the Python can change independently.
     "open_positions": 1,
     "max_positions": 2,
     "risk_used_usd": 438,
-    "risk_budget_usd": 5000,
+    "risk_budget_usd": 1500,
     "daily_drawdown_pct": -0.10,
     "competition_drawdown_pct": 0.40
   },
@@ -193,7 +193,7 @@ Top to bottom, in order of what matters:
    contracts, budget. Directly beside the trade that was chosen. This is the single panel
    that communicates bounded autonomy without a paragraph of explanation — a reader sees
    the constraint and the choice side by side.
-5. **Risk used.** "$438 of $5,000" and "1 of 2 positions", as bars, plus the distance to
+5. **Risk used.** "$438 of $1,500" and "1 of 2 positions", as bars, plus the distance to
    the −2% and −4% halts. Shows at a glance that the system operates well inside its
    limits, which is more reassuring than any description of the limits.
 6. **Open positions.** One card each: the spread, what we collected, the worst case, where
@@ -225,9 +225,9 @@ old and might reverse tomorrow.
 4. Regime badge: **NEUTRAL**, with the gold sentence and the five signals beneath it.
    Within about five seconds they have understood there is a real thesis here, not a bot.
 5. The envelope panel sits next to the trade: *allowed — put spreads, ≥1.5% out, ≤2
-   contracts, $5,000 budget* against *chose — 640/635, 1 contract, $438 at risk*. The
+   contracts, $1,500 budget* against *chose — 640/635, 1 contract, $438 at risk*. The
    control story lands without being explained.
-6. Risk bars show it running at under a tenth of its allowance. That reads as discipline.
+6. Risk bars show it running at under a third of its allowance. That reads as discipline.
 7. They scroll to the run history and read the agent's reasoning on the most recent trade
    — the strikes it considered, the one it chose, why it rejected the others — then the
    `AUDIT_PASS` badge and `NO_ERROR` classification beside it.
