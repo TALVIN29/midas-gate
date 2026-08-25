@@ -15,3 +15,6 @@ __pycache__/
 
 # MCP server stderr log
 mcp-server.log
+
+# Backtest bar cache (418k rows). The report itself IS the deliverable - tracked.
+data/

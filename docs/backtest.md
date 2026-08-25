@@ -49,18 +49,27 @@ SLOW LOOP  (offline, human-governed)
 Run by hand, and its output is quoted in `WRITEUP.md` and the slides. If it were deleted
 after the numbers were recorded, nothing would break.
 
-Starting point: adapt `alpacahq/alpaca-skills` → `alpaca-trading-backtest` rather than
-writing a backtester from scratch. A hand-rolled backtester is a well-known way to produce
-a flattering wrong number.
+Starting point, as specified: adapt `alpacahq/alpaca-skills` → `alpaca-trading-backtest`
+rather than writing a backtester from scratch, because a hand-rolled backtester is a
+well-known way to produce a flattering wrong number.
+
+> **What shipped instead, and why.** `backtest.py` does not simulate fills, positions or
+> P&L, so there is no backtester to hand-roll and nothing for a backtesting framework to
+> do. It replays `regime.classify` at two timestamps a day and counts what fired. The
+> flattering-wrong-number risk that a framework protects against is fill modelling, and
+> this tool deliberately has none — the moment it would have needed one (option-level P&L
+> by regime) it reports SPY proxies and says so instead. Adding a framework here would
+> wrap machinery around a decision it does not make.
 
 ## Inputs
 
 | Input | Detail |
 |---|---|
-| SPY daily prices | About 6 months, via `alpaca-py` |
-| `GLD`, `GDX`, `UUP`, `TLT` | Same window, to replay the regime rules |
-| The live rules | **Imported** from `regime.py` and `gates.py`. Never re-typed |
-| `rules_version` | Which threshold set is being tested — V1, or a proposed V2 |
+| SPY daily bars | About 6 months, via `alpaca-py`, for previous regular-session closes |
+| SPY **minute** bars | Same window, feed `sip`, to sample at 09:35 and 13:05 ET |
+| `GLD`, `GDX`, `UUP`, `TLT` | Same, daily and minute, to replay the regime rules |
+| The live rules | **Imported** from `regime.py`. Never re-typed |
+| `rules_version` | Read from `regime.py`; `--rules` only labels the report |
 | Live outcomes to date | From `state.json`, once the competition has started |
 | `ALPACA_API_KEY`, `ALPACA_SECRET_KEY` | Environment variables |
 
@@ -70,7 +79,21 @@ worse than no backtest, because it produces a confident number about the wrong t
 
 The same applies to the measurement convention: `latest price / previous regular-session
 close − 1`, identical to [regime.md](regime.md). A backtest that uses completed daily
-candles is testing a system that can see the future by several hours.
+candles is testing a system that can see the future by several hours — close-to-close is
+a proxy only, and is not what the validation run uses.
+
+**Same-timestamp sampling.** Both runs are replayed at the real clock times, 09:35 and
+13:05 ET, on SIP minute bars. IEX is not usable: probed six months back it dropped whole
+stretches of UUP, and a missing secondary input silently changes the regime. The price at
+a sample instant is the close of the last bar at or before it — the stand-in for
+`get_stock_latest_trade`. A bar more than 15 minutes stale reads as **unavailable**, not
+as a price, which is both what live logic would see and what makes early-close half-days
+fall out on their own with no holiday table to maintain.
+
+**The morning is carried into the afternoon.** The 13:05 replay passes
+`prior={"regime", "stand_down"}` from the 09:35 result, exactly as `agent.py` threads it
+out of `state.json`. Without that, the stand-down latch and the one-way caution rule never
+fire and the backtest measures a system with no memory.
 
 ## The V1 discipline
 
@@ -125,10 +148,11 @@ a good rule for a system whose failure mode is a −4% halt.
 
 **Before the competition — establishing the claim.**
 
-1. Talvin runs `python backtest.py --rules V1` once, by hand, in the days before Aug 28.
-2. It pulls six months of prices, replays the regime rules day by day, and simulates the
-   spreads the envelope would have permitted.
-3. It prints the tables above and writes them to a file.
+1. Talvin runs `python backtest.py` once, by hand, in the days before Aug 28.
+2. It pulls six months of daily and minute bars (cached under `data/`, so a rerun is
+   free), replays the regime rules at 09:35 and 13:05 each session, and counts what fired.
+   It does **not** simulate spreads: see the P&L note below.
+3. It prints the tables above and writes `backtest_report.md`.
 4. The headline number goes into `WRITEUP.md`: not "credit spreads usually win" but "over
    the last six months, these rules produced N trades, an X% win rate, and the stand-down
    rule avoided Y losses at a cost of Z skipped winners."
@@ -155,7 +179,7 @@ a good rule for a system whose failure mode is a −4% halt.
 | What goes wrong | What happens |
 |---|---|
 | History unavailable for a fund | Report the gap. Do not silently drop the rule that used it — a backtest with a missing input is testing different rules |
-| Option prices unavailable historically | Simulate the spread from the underlying with a stated pricing assumption, and label every result as modelled. Never present a modelled fill as a real one |
+| Option prices unavailable historically | **This is the case.** Rather than model fills, the report omits option-level P&L and win rate entirely and substitutes SPY proxies — move to same-day close, move to next close, worst intraday move after the call — each labelled as a proxy. A modelled fill presented next to real frequency counts would be the one number a reader trusts by mistake |
 | The result is unflattering | Publish it. An honest 62% is evidence; an unverifiable 80% is a claim |
 | The backtest disagrees with live results | Say so, and say by how much. Five days of live data does not overturn six months, and six months does not explain away five days |
 | Tempted to re-tune | One documented V2, or none. The rule exists precisely because the temptation is strongest when the number is close |
@@ -168,11 +192,15 @@ python backtest.py --self-test
 
 `assert`-based checks against hand-made price series, no market needed:
 
-- The regime classifier used in the backtest is the **imported** one from `regime.py` —
-  asserted by identity, not by comparing outputs.
-- The measurement convention matches `regime.py` exactly on a shared fixture.
-- A hand-made fear day classifies `RISK_OFF` in the backtest and in live logic identically.
-- The stand-down counters increment correctly on a constructed day that triggers it.
+- Every `reason` marker the report counts is still emitted by `regime.classify`. Rewording
+  a note in `regime.py` fails this check rather than silently reporting zero for a rule.
+- Sampling takes the last bar at or before the instant, never a later one.
+- A bar that is stale, or a session that has not opened yet, reads as unavailable.
+- An early close produces no 13:05 sample — the morning is not forward-filled into an
+  afternoon decision.
+- A stand-down morning stays stood down through a calm 13:05, with `risk_budget_usd: 0`
+  and `regime_measured: RISK_ON` recorded for transparency.
+- The report renders end to end on a real record set.
 - Per-regime day counts sum to the total number of trading days in the window.
 - A window with a deliberately missing fund reports the gap rather than silently producing
   a number.
