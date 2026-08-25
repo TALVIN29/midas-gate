@@ -28,7 +28,7 @@ import os
 import subprocess
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 import gates
 import regime
@@ -280,6 +280,31 @@ def ask_model(envelope: dict, regime_block: dict, candidates: list[dict],
     return proposal
 
 
+def _prior_regime(state: dict, now_et: datetime) -> dict:
+    """This morning's regime, as classify() expects it in `prior`.
+
+    Without this the 13:05 run starts blind: the stand-down latch and the
+    one-way intraday caution rule both live in `prior`, so an empty one silently
+    releases a morning stand-down - exactly what the rules forbid.
+
+    Yesterday's state must never latch today, so anything not stamped with the
+    current ET trading date is discarded.
+    """
+    stamp = state.get("updated_at")
+    if not stamp:
+        return {}
+    try:
+        when = datetime.fromisoformat(stamp)
+    except ValueError:
+        return {}
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    if when.astimezone(gates.ET).date() != now_et.date():
+        return {}
+    status = state.get("status", {})
+    return {"regime": status.get("regime"), "stand_down": bool(status.get("stand_down"))}
+
+
 def run(run_id: str | None = None, mcp: MCP | None = None) -> dict:
     """One full decision cycle. Returns the record audit.py will publish."""
     now = datetime.now(gates.ET)
@@ -287,8 +312,11 @@ def run(run_id: str | None = None, mcp: MCP | None = None) -> dict:
     dry = os.environ.get("DRY_RUN") == "1"
     state = json.load(open("site/state.json")) if os.path.exists("site/state.json") else {}
 
-    reg = regime.classify(regime.fetch_signals())
-    print("REGIME=%s %s" % (reg["regime"], reg["reason"]))
+    reg = regime.classify(regime.fetch_signals(), prior=_prior_regime(state, now))
+    print("REGIME=%s budget=$%s dist=%s%% puts=%s rules=%s"
+          % (reg["regime"], reg["risk_budget_usd"], reg["min_strike_distance_pct"],
+             "allowed" if reg["put_spreads_allowed"] else "STOOD DOWN", reg["rules_version"]))
+    print("  %s" % reg["reason"])
 
     own_mcp = mcp is None
     mcp = mcp or MCP()
@@ -369,6 +397,25 @@ def _spot(quote: dict, symbol: str = "SPY") -> float:
 
 
 def _self_check() -> None:
+    # The 13:05 run must carry the morning forward, or the stand-down latch and
+    # the one-way caution rule never fire in production.
+    now = datetime(2026, 9, 2, 13, 5, tzinfo=gates.ET)
+    morning = {"updated_at": datetime(2026, 9, 2, 13, 40, tzinfo=timezone.utc).isoformat(),
+               "status": {"regime": "STAND_DOWN", "stand_down": True}}
+    prior = _prior_regime(morning, now)
+    assert prior == {"regime": "STAND_DOWN", "stand_down": True}, prior
+    calm = {"SPY": 0.10, "GLD": 0.05, "GDX": 0.20, "UUP": 0.02, "TLT": 0.01}
+    held = regime.classify(calm, prior=prior)
+    assert held["regime"] == "STAND_DOWN" and held["put_spreads_allowed"] is False, held
+    assert held["regime_measured"] == "RISK_ON", held
+
+    # Yesterday's stand-down must not latch today, and junk state must not crash.
+    stale = dict(morning, updated_at=datetime(2026, 9, 1, 13, 40,
+                                              tzinfo=timezone.utc).isoformat())
+    assert _prior_regime(stale, now) == {}, _prior_regime(stale, now)
+    assert regime.classify(calm, prior=_prior_regime(stale, now))["regime"] == "RISK_ON"
+    assert _prior_regime({}, now) == {} and _prior_regime({"updated_at": "junk"}, now) == {}
+
     env = {"short_strike_min_distance_pct": 1.5, "max_risk_per_contract_usd": 500,
            "expiries": ["2026-08-26"], "max_contracts": 5, "spot_at_build": 764.43,
            "remaining_risk_budget_usd": 5000, "regime": "NEUTRAL",
