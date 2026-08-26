@@ -300,6 +300,11 @@ def _self_check() -> None:
         ok, why = validate(bad, env, 651.20, acct)
         assert not ok and expect in why, (expect, why)
 
+    # Panel-shaped output remains fenced by the unchanged validator.
+    panel_bad = dict(good, short_strike=641, decided_by="panel", candidate_index=0)
+    ok, why = validate(panel_bad, env, 648.10, acct)
+    assert not ok and "required" in why, why
+
     # Halted since the envelope was built, and duplicate submission.
     ok, _ = validate(good, env, 651.20, acct, state={"review_required": True})
     assert not ok
