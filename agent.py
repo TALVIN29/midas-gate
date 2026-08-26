@@ -32,6 +32,7 @@ from datetime import datetime, timezone
 
 import gates
 import regime
+import bs
 
 # The only tools the agent is given. The server exposes 72; a smaller surface
 # is a shorter prompt, fewer ways to wander, and nothing that can cancel an
@@ -47,6 +48,8 @@ TOOLS_ALLOWED = (
 
 MODEL = "claude-opus-5"
 SPREAD_WIDTH = 5.0  # dollars between short and long strike
+PANEL_FLAG = "MIDAS_EVIDENCE_PANEL"
+OWNERSHIP_KEYS = {"risk_budget_usd", "max_positions", "min_strike_distance_pct", "regime", "stand_down"}
 
 
 class MCP:
@@ -129,7 +132,7 @@ class MCP:
 
 
 def legal_candidates(chain: dict, envelope: dict, spot: float,
-                     expiry: str | None = None) -> list[dict]:
+                     expiry: str | None = None, modelled_iv: float | None = None) -> list[dict]:
     """Every put spread in the chain that the envelope already permits.
 
     Filtering here rather than in the prompt is the point: the model chooses
@@ -143,7 +146,25 @@ def legal_candidates(chain: dict, envelope: dict, spot: float,
         bid, ask = quote.get("bp"), quote.get("ap")
         if bid is None or ask is None:
             continue
-        by_strike[int(symbol[-8:]) / 1000] = {"bid": bid, "ask": ask, "symbol": symbol}
+        quoted_iv = snap.get("impliedVolatility")
+        greeks = snap.get("greeks") or {}
+        strike = int(symbol[-8:]) / 1000
+        modelled = quoted_iv is None and modelled_iv is not None
+        sigma = quoted_iv if quoted_iv is not None else modelled_iv
+        model = {}
+        if sigma is not None:
+            try:
+                # 1--3 DTE is known from the legal expiry; fallback remains visibly modelled.
+                dte = max((datetime.fromisoformat(expiry).date() - datetime.now().date()).days, 1)
+                model = bs.greeks(spot, strike, dte / 365, float(sigma), option_type="put")
+            except (TypeError, ValueError):
+                model = {}
+        by_strike[strike] = {
+            "bid": bid, "ask": ask, "symbol": symbol, "iv": quoted_iv if quoted_iv is not None else modelled_iv,
+            "delta": greeks.get("delta", model.get("delta")),
+            "theta": greeks.get("theta", model.get("theta")),
+            "iv_is_modelled": modelled,
+        }
 
     out = []
     for short, s in by_strike.items():
@@ -167,6 +188,8 @@ def legal_candidates(chain: dict, envelope: dict, spot: float,
             "distance_pct": round((spot - short) / spot * 100, 2),
             "return_on_risk_pct": round(credit * 100 / max_loss * 100, 2),
             "short_spread": round(s["ask"] - s["bid"], 2),
+            "iv": s["iv"], "delta": s["delta"], "theta": s["theta"],
+            "iv_is_modelled": s["iv_is_modelled"],
         })
     return sorted(out, key=lambda c: -c["return_on_risk_pct"])
 
@@ -202,6 +225,51 @@ def _stub_rank(envelope: dict, candidates: list[dict], lessons: list) -> dict:
     }
 
 
+def _abstain(seat: str, reason: str, malformed: bool = False) -> dict:
+    return {"seat": seat, "stance": "ABSTAIN", "conviction": 0,
+            "preferred_candidate_index": None, "evidence": [], "reason": reason,
+            "would_change_if": "Required inputs become available.", "malformed": malformed}
+
+
+def aggregate_stances(stances: list[dict]) -> dict:
+    """Pure PANEL.md aggregation. ABSTAIN has no vote."""
+    voting = [s for s in stances if s.get("stance") != "ABSTAIN"]
+    score = {"FAVOUR": 1, "NEUTRAL": 0, "AGAINST": -1}
+    if not voting:
+        return {"voting_seats": 0, "abstained": [s.get("seat") for s in stances],
+                "consensus": 0.0, "dissent": 0, "hard_objection": False}
+    weights = [max(int(s.get("conviction", 0)), 1) for s in voting]
+    values = [score[s["stance"]] for s in voting]
+    return {"voting_seats": len(voting), "abstained": [s.get("seat") for s in stances if s.get("stance") == "ABSTAIN"],
+            "consensus": sum(v * w for v, w in zip(values, weights)) / sum(weights),
+            "dissent": max(values) - min(values),
+            "hard_objection": any(s["stance"] == "AGAINST" and s["conviction"] >= 2 for s in voting)}
+
+
+def _normalise_stance(seat: str, value: dict, candidate_count: int) -> dict:
+    """Malformed seat output abstains; it never breaks a trade run."""
+    if not isinstance(value, dict) or value.get("seat") != seat or value.get("stance") not in {"FAVOUR", "NEUTRAL", "AGAINST", "ABSTAIN"}:
+        return _abstain(seat, "Seat response violated the panel protocol.", True)
+    try:
+        value["conviction"] = int(value["conviction"])
+    except (KeyError, TypeError, ValueError):
+        return _abstain(seat, "Seat response had no valid conviction.", True)
+    if not 0 <= value["conviction"] <= 3 or (value["stance"] in {"NEUTRAL", "ABSTAIN"} and value["conviction"] != 0):
+        return _abstain(seat, "Seat response had an invalid stance/conviction pair.", True)
+    index = value.get("preferred_candidate_index")
+    if value["stance"] != "FAVOUR" and index is not None:
+        return _abstain(seat, "Seat preferred a candidate without favouring trade.", True)
+    if index is not None and (not isinstance(index, int) or not 0 <= index < candidate_count):
+        return _abstain(seat, "Seat preferred an invalid candidate index.", True)
+    if seat == "macro-calendar" and index is not None:
+        return _abstain(seat, "Calendar seat cannot select a candidate.", True)
+    if not isinstance(value.get("evidence"), list) or (value["stance"] != "ABSTAIN" and not value["evidence"]):
+        return _abstain(seat, "Seat gave no traceable evidence.", True)
+    if not value.get("reason") or not value.get("would_change_if"):
+        return _abstain(seat, "Seat omitted required explanation.", True)
+    return {k: value.get(k) for k in ("seat", "stance", "conviction", "preferred_candidate_index", "evidence", "reason", "would_change_if")}
+
+
 SYSTEM_PROMPT = """You are the trade-selection step of Midas Gate, an autonomous \
 SPY options agent.
 
@@ -228,14 +296,74 @@ Reply with JSON only:
 rejected and why"}"""
 
 
+def _panel_payloads(envelope: dict, regime_block: dict, candidates: list[dict]) -> dict:
+    events_path = os.environ.get("MACRO_EVENTS_PATH", "data/macro_events_2026.json")
+    try:
+        events = json.load(open(events_path)).get("events", [])
+    except (OSError, json.JSONDecodeError):
+        events = []
+    return {
+        "cross-asset": {"signals": regime_block.get("signals", {}), "regime_measured": regime_block.get("regime_measured"), "stand_down": regime_block.get("stand_down"), "reason": regime_block.get("reason")},
+        "volatility": {"candidates": [{k: c.get(k) for k in ("short_strike", "long_strike", "credit", "max_loss", "return_on_risk_pct", "distance_pct", "short_spread", "iv", "delta", "theta", "iv_is_modelled")} for c in candidates[:12]], "expiries": envelope.get("expiries", []), "spot": envelope.get("spot_at_build"), "min_distance_pct": envelope.get("short_strike_min_distance_pct")},
+        "macro-calendar": {"expiries": envelope.get("expiries", []), "now_et": datetime.now(gates.ET).isoformat(), "events": events},
+        "positioning": {},
+    }
+
+
+def _panel_select(envelope: dict, regime_block: dict, candidates: list[dict], lessons: list) -> dict:
+    """Evidence panel. Seats only see their allowlisted payload and pick indices."""
+    import anthropic
+    payloads = _panel_payloads(envelope, regime_block, candidates)
+    assert set(payloads["cross-asset"]) == {"signals", "regime_measured", "stand_down", "reason"}
+    assert set(payloads["volatility"]) == {"candidates", "expiries", "spot", "min_distance_pct"}
+    assert set(payloads["macro-calendar"]) == {"expiries", "now_et", "events"}
+    assert payloads["positioning"] == {}
+    client, stances = anthropic.Anthropic(), []
+    for seat, payload in payloads.items():
+        if not payload or (seat == "macro-calendar" and not payload["events"]):
+            stances.append(_abstain(seat, "Required seat inputs are unavailable."))
+            continue
+        try:
+            reply = client.messages.create(model=MODEL, max_tokens=800,
+                system="You are %s. Use only supplied fields. JSON only: seat, stance FAVOUR|NEUTRAL|AGAINST|ABSTAIN, conviction 0..3, preferred_candidate_index, evidence field: value, reason, would_change_if. Never propose size, strikes, expiry, regime, or forecast." % seat,
+                messages=[{"role": "user", "content": json.dumps(payload)}])
+            text = "".join(b.text for b in reply.content if b.type == "text")
+            stances.append(_normalise_stance(seat, json.loads(text[text.index("{"):text.rindex("}") + 1]), len(candidates)))
+        except Exception:  # noqa: BLE001
+            stances.append(_abstain(seat, "Seat response was unavailable.", True))
+    summary = aggregate_stances(stances)
+    if summary["voting_seats"] == 0 or summary["consensus"] <= 0:
+        return {"action": "NO_TRADE", "reasoning": "Panel did not produce positive consensus.", "decided_by": "panel_floor", "panel": {"stances": stances, "aggregation": summary}}
+    safe = {k: envelope[k] for k in ("regime", "strategies", "expiries", "short_strike_min_distance_pct", "max_contracts", "max_risk_per_contract_usd", "remaining_risk_budget_usd")}
+    try:
+        reply = client.messages.create(model=MODEL, max_tokens=1000, system="Choose candidate_index or NO_TRADE. JSON only: action, candidate_index, contracts, reasoning, dissent_addressed. Never return credit, strikes, expiry, or risk settings.", messages=[{"role": "user", "content": json.dumps({"stances": stances, "aggregation": summary, "envelope": safe, "candidates": candidates[:12], "lessons": lessons})}])
+        text = "".join(b.text for b in reply.content if b.type == "text")
+        answer = json.loads(text[text.index("{"):text.rindex("}") + 1])
+        index = answer.get("candidate_index")
+        if answer.get("action") != "PLACE" or not isinstance(index, int) or not 0 <= index < len(candidates) or (summary["dissent"] > 0 and not answer.get("dissent_addressed")):
+            raise ValueError("invalid synthesis")
+        c = candidates[index]
+        proposal = {"action": "PLACE", "strategy": "PUT_CREDIT_SPREAD", **{k: c[k] for k in ("expiry", "short_strike", "long_strike", "short_symbol", "long_symbol", "credit")}, "contracts": min(max(int(answer.get("contracts", 1)), 1), envelope["max_contracts"]), "reasoning": answer.get("reasoning", "Panel selected a legal candidate."), "dissent_addressed": answer.get("dissent_addressed", ""), "decided_by": "panel", "candidates_considered": candidates[:12], "panel": {"stances": stances, "aggregation": summary}}
+        assert not (set(proposal) & OWNERSHIP_KEYS)
+        return proposal
+    except Exception:  # noqa: BLE001
+        return {"action": "NO_TRADE", "reasoning": "Panel synthesis was not parseable.", "decided_by": "parse_error", "panel": {"stances": stances, "aggregation": summary}}
+
+
 def ask_model(envelope: dict, regime_block: dict, candidates: list[dict],
               lessons: list | None = None) -> dict:
     """The seam. Claude when a key is present, deterministic baseline otherwise."""
     lessons = lessons or []
     if not candidates:
         return {"action": "NO_TRADE", "reasoning": "No legal candidate in the envelope."}
-    if not os.environ.get("ANTHROPIC_API_KEY"):
+    if not os.environ.get("ANTHROPIC_API_KEY") or os.environ.get(PANEL_FLAG) != "1":
         return _stub_rank(envelope, candidates, lessons)
+
+    before = json.dumps(envelope, sort_keys=True, separators=(",", ":"))
+    panel = _panel_select(envelope, regime_block, candidates, lessons)
+    assert json.dumps(envelope, sort_keys=True, separators=(",", ":")) == before
+    if panel.get("decided_by") in {"panel", "panel_floor", "parse_error"}:
+        return panel
 
     import anthropic
 
@@ -338,11 +466,12 @@ def run(run_id: str | None = None, mcp: MCP | None = None) -> dict:
         # least, so pricing only that would stand the system down on days where
         # a 2- or 3-DTE spread was perfectly good.
         candidates = []
+        modelled_iv = regime.realised_vol_20d()
         for expiry in envelope["expiries"]:
             chain = mcp.call("get_option_chain", underlying_symbol="SPY",
                              expiration_date=expiry, type="put",
                              strike_price_gte=spot * 0.95, strike_price_lte=spot)
-            candidates += legal_candidates(chain, envelope, spot, expiry)
+            candidates += legal_candidates(chain, envelope, spot, expiry, modelled_iv)
         candidates.sort(key=lambda c: -c["return_on_risk_pct"])
         print("ENVELOPE ok: %d legal candidates, budget $%.0f left"
               % (len(candidates), envelope["remaining_risk_budget_usd"]))
@@ -436,6 +565,18 @@ def _self_check() -> None:
     assert all(c["max_loss"] <= 500 for c in cands)
     assert all(c["credit"] > 0 for c in cands)
     assert cands == sorted(cands, key=lambda c: -c["return_on_risk_pct"])
+
+    # Panel protocol: pure aggregation floors and malformed/empty seats abstain.
+    abstained = [_abstain("cross-asset", "none"), _abstain("volatility", "none")]
+    assert aggregate_stances(abstained)["voting_seats"] == 0
+    favours = [{"seat": "a", "stance": "FAVOUR", "conviction": 2}, {"seat": "b", "stance": "FAVOUR", "conviction": 1}]
+    assert aggregate_stances(favours)["consensus"] == 1.0
+    objection = [{"seat": "a", "stance": "FAVOUR", "conviction": 2}, {"seat": "b", "stance": "AGAINST", "conviction": 2}]
+    assert aggregate_stances(objection)["hard_objection"] is True and aggregate_stances(objection)["consensus"] == 0
+    assert _normalise_stance("cross-asset", {}, len(cands))["stance"] == "ABSTAIN"
+    for seat, payload in _panel_payloads(env, {}, cands).items():
+        if not payload:
+            assert _abstain(seat, "empty")["stance"] == "ABSTAIN"
 
     # The stub picks a liquid candidate and explains itself.
     pick = _stub_rank(env, cands, [])

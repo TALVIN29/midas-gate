@@ -234,6 +234,8 @@ def build_state(record: dict, account: dict, positions: list[dict],
         "violations": violations,
         "outcome_class": outcome,
         "reasoning": proposal.get("reasoning", ""),
+        "candidates_considered": proposal.get("candidates_considered", []),
+        "panel": proposal.get("panel"),
     }
 
     return {
@@ -272,7 +274,8 @@ def build_state(record: dict, account: dict, positions: list[dict],
             "risk_budget_usd": envelope.get("risk_budget_usd"),
         },
         "positions": positions,
-        "learning": {"active_lessons": lessons, "recent_outcomes": outcomes},
+        "learning": {"active_lessons": lessons, "recent_outcomes": outcomes,
+                     "seat_calibration": previous.get("learning", {}).get("seat_calibration", {})},
         "human_actions": previous.get("human_actions", []),
         "runs": ([run_entry] + list(previous.get("runs", [])))[:100],
     }

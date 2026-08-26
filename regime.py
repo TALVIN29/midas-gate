@@ -228,6 +228,27 @@ def fetch_signals() -> dict:
     return signals
 
 
+def realised_vol_20d() -> float | None:
+    """Annualised SPY realised volatility for labelled, modelled option greeks."""
+    from math import log, sqrt
+    from alpaca.data.historical import StockHistoricalDataClient
+    from alpaca.data.requests import StockBarsRequest
+    from alpaca.data.timeframe import TimeFrame
+    try:
+        bars = StockHistoricalDataClient(
+            os.environ["ALPACA_API_KEY"], os.environ["ALPACA_SECRET_KEY"]
+        ).get_stock_bars(StockBarsRequest(symbol_or_symbols=["SPY"], timeframe=TimeFrame.Day,
+                                           start=datetime.now(timezone.utc) - timedelta(days=45)))["SPY"]
+        closes = [b.close for b in bars if b.timestamp.date() < datetime.now(timezone.utc).date()][-21:]
+        if len(closes) < 21:
+            return None
+        returns = [log(closes[i] / closes[i - 1]) for i in range(1, len(closes))]
+        mean = sum(returns) / len(returns)
+        return sqrt(sum((r - mean) ** 2 for r in returns) / (len(returns) - 1)) * sqrt(252)
+    except Exception:  # noqa: BLE001 - a missing context number must not block a legal envelope
+        return None
+
+
 def _self_check() -> None:
     calm = {"SPY": 0.10, "GLD": 0.05, "GDX": 0.20, "UUP": 0.02, "TLT": 0.01}
     r = classify(calm)

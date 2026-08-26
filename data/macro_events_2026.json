@@ -1,0 +1,14 @@
+{
+  "compiled_by": "Midas Gate team",
+  "compiled_on": "2026-08-26",
+  "sources": [
+    "https://www.bea.gov/news/schedule",
+    "https://www.bls.gov/schedule/news_release/",
+    "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
+  ],
+  "scope": "Report-only panel evidence. This file defines no blackout window and no execution restriction.",
+  "events": [
+    {"date": "2026-08-28", "time_et": "08:30", "name": "Personal Income and Outlays (PCE)", "tier": 1},
+    {"date": "2026-09-04", "time_et": "08:30", "name": "Employment Situation", "tier": 1}
+  ]
+}
