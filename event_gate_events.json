@@ -1,0 +1,13 @@
+{
+  "_note": "Approved-event blackout list for event_gate.py. Human-approved edits ONLY. This file defines the event-gate blackout; no other file does. 'type' must be one of event_gate.APPROVED_TYPES. 'time_et' is the official release time, 24h ET. VERIFY every date/time against the primary source (BLS for CPI/Employment Situation, BEA for PCE, federalreserve.gov for FOMC) before committing - do not guess.",
+  "_sources": {
+    "CPI": "bls.gov/schedule/news_release/cpi.htm",
+    "NFP": "bls.gov/schedule/news_release/empsit.htm",
+    "PCE": "bea.gov/news/schedule",
+    "FOMC_RATE_DECISION": "federalreserve.gov/monetarypolicy/fomccalendars.htm"
+  },
+  "events": [
+    {"name": "PCE Price Index (July)", "type": "PCE", "date": "2026-08-28", "time_et": "08:30"},
+    {"name": "Employment Situation (August)", "type": "NFP", "date": "2026-09-04", "time_et": "08:30"}
+  ]
+}

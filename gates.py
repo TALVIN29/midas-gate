@@ -49,7 +49,7 @@ def legal_expiries(today: date, calendar: list[date] | None = None) -> list[str]
 
 def build_envelope(regime_block: dict, account: dict, positions: list[dict],
                    now_et: datetime, run_id: str, state: dict | None = None,
-                   spot: float | None = None) -> dict:
+                   spot: float | None = None, event_block: dict | None = None) -> dict:
     """The legal envelope, or a refusal. Order matters: see docs/gates.md."""
     state = state or {}
 
@@ -98,6 +98,18 @@ def build_envelope(regime_block: dict, account: dict, positions: list[dict],
     if now_et.time() >= NO_NEW_POSITIONS_AFTER:
         return refuse("NO_NEW_POSITIONS", "After %s ET - too late to react."
                       % NO_NEW_POSITIONS_AFTER.strftime("%H:%M"), "ACTIVE")
+
+    # 5.5 Scheduled-event gate. Separate from the regime - it does not rewrite
+    #     it (handoff section 3). An approved catalyst still ahead this session
+    #     makes the legal envelope empty: a clean NO_TRADE, not an error.
+    if event_block and event_block.get("blocked"):
+        name = event_block.get("event_name") or "an approved event"
+        et = event_block.get("event_time_et")
+        detail = ("Blocked by scheduled-event gate: %s%s still ahead this session."
+                  % (name, " at %s ET" % et if et else ""))
+        return refuse("NO_TRADE", detail,
+                      regime_block.get("operating_state", "ACTIVE"),
+                      event_gate=event_block)
 
     # 6. Regime permissions, after the stand-down has already stripped strategies.
     strategies = list(regime_block.get("allowed_strategies") or [])
@@ -274,6 +286,18 @@ def _self_check() -> None:
     dup = build_envelope(neutral, acct, [], now, "R1", state={"runs_with_orders": ["R1"]},
                          spot=651.2)
     assert dup["reason"] == "DUPLICATE_RUN", dup
+
+    # Scheduled-event gate: an approved catalyst still ahead makes the envelope
+    # a clean NO_TRADE, regardless of regime, and the block rides along for audit.
+    blocked = build_envelope(neutral, acct, [], now, "r", spot=651.2, event_block={
+        "blocked": True, "event_name": "FOMC Rate Decision", "event_time_et": "14:00"})
+    assert blocked["allowed"] is False and blocked["reason"] == "NO_TRADE", blocked
+    assert blocked["event_gate"]["event_name"] == "FOMC Rate Decision", blocked
+    assert "scheduled-event gate" in blocked["detail"], blocked
+    # A non-blocking event_block leaves the envelope exactly as it was without one.
+    clear = {"blocked": False, "event_name": None, "event_time_et": None}
+    assert build_envelope(neutral, acct, [], now, "r", spot=651.2, event_block=clear) \
+        == build_envelope(neutral, acct, [], now, "r", spot=651.2)
 
     # A halted regime produces no envelope at all.
     halted = build_envelope({"operating_state": "HALTED", "regime": None,

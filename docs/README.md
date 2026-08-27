@@ -108,6 +108,9 @@ GitHub Actions cron (weekdays, 09:35 + 13:05 ET)
   ├─ 2. regime.py   gold/macro read → RISK_ON | NEUTRAL | RISK_OFF, plus an
   │                 explicit machine-readable permission block
   │
+  ├─ 2b. event_gate.py  approved catalyst (CPI/NFP/PCE/FOMC) still ahead this
+  │                 session? → BLOCKED, envelope becomes a clean NO_TRADE
+  │
   ├─ 3. gates.py    account + regime → the ENVELOPE: every trade that is legal
   │                 right now. Or a refusal, and no envelope at all
   │
