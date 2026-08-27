@@ -30,6 +30,7 @@ import sys
 import time
 from datetime import datetime, timezone
 
+import event_gate
 import gates
 import regime
 import bs
@@ -446,6 +447,9 @@ def run(run_id: str | None = None, mcp: MCP | None = None) -> dict:
              "allowed" if reg["put_spreads_allowed"] else "STOOD DOWN", reg["rules_version"]))
     print("  %s" % reg["reason"])
 
+    event_block = event_gate.evaluate(now)
+    print("EVENT_GATE=%s %s" % (event_block["blocked"], event_block["reason"]))
+
     own_mcp = mcp is None
     mcp = mcp or MCP()
     try:
@@ -456,7 +460,8 @@ def run(run_id: str | None = None, mcp: MCP | None = None) -> dict:
         spot = _spot(quote)
 
         envelope = gates.build_envelope(reg, account, positions, now, run_id,
-                                        state=state.get("status", {}), spot=spot)
+                                        state=state.get("status", {}), spot=spot,
+                                        event_block=event_block)
         if not envelope.get("allowed"):
             print("NO ENVELOPE: %s - %s" % (envelope["reason"], envelope["detail"]))
             return {"run_id": run_id, "regime": reg, "envelope": envelope,

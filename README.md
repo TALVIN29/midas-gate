@@ -147,6 +147,7 @@ a glossary.
 | Doc | Module | What it does |
 |---|---|---|
 | [regime.md](docs/regime.md) | `regime.py` | Gold prices in, regime and permissions out |
+| [event_gate.md](docs/event_gate.md) | `event_gate.py` | Blocks new positions when an approved catalyst is still ahead |
 | [gates.md](docs/gates.md) | `gates.py` | The legal envelope, and the pre-trade validator |
 | [bs.md](docs/bs.md) | `bs.py` | Our own option maths, display only |
 | [agent.md](docs/agent.md) | `agent.py` | The AI that ranks legal candidates and picks one, or none |
@@ -178,7 +179,7 @@ was built than a clean tree would be.
 
 ## Status
 
-**Specification complete. Implementation in progress.**
+**Core modules built and self-checked. Gold Rules V2 frozen. Production workflow next.**
 
 Honest current state, so nothing here is mistaken for more than it is:
 
@@ -186,21 +187,29 @@ Honest current state, so nothing here is mistaken for more than it is:
 - [x] Nine module specifications written, then **rewritten** against the control
       architecture — bounded autonomy, four operating states, pre-trade validation,
       audit escalation, bounded learning. First draft kept in [`appendix/`](appendix/INDEX.md)
-- [x] Gold Regime Rules **V1** recorded from the teammate's own numbers, labelled as
-      pending his sign-off rather than presented as final
+- [x] Gold Regime Rules **V2** — frozen production logic. `regime.py` carries the
+      approved thresholds; `RISK_OFF` is a live $1,000 budget, not a stand-down, and
+      only `STAND_DOWN` takes the budget to $0
 - [x] **Alpaca MCP smoke test passed (Aug 24)** — `alpaca-mcp-server 3.4.7`, 72 tools,
       account and option chain both fetched through MCP. The free feed quotes SPY puts
       two-sided at 1–5¢ spreads, so the largest open technical risk is closed and the
       local-pricing fallback is not needed. It also surfaced three errors in our own
       specs — a wrong env var name, two wrong tool names, and a risk cap that
       contradicted itself. All three fixed
-- [ ] `regime.py`, `gates.py`, `bs.py`, `agent.py`, `audit.py`
-- [ ] Dashboard
-- [ ] Backtest over ~6 months of SPY, V1 frozen before any tuning, for a win-rate
-      figure with a method attached
+- [x] `regime.py`, `gates.py`, `bs.py`, `agent.py`, `audit.py` — implemented, each with
+      an in-module `_self_check()` that runs on `python <module>.py`
+- [x] Same-timestamp backtest over 127 sessions (Feb–Aug 2026), V2 frozen before the
+      run — 3 `STAND_DOWN` days, 5 fear-only `RISK_OFF`, 8 `RISK_OFF`-or-worse, all
+      inside the agreed sanity ranges. See [`backtest_report.md`](backtest_report.md)
+- [x] Scheduled-event gate — deterministic block on new positions when an approved
+      catalyst (CPI, NFP, PCE, FOMC) is still ahead in the session. Separate from the
+      regime; produces a clean `NO_TRADE`. `event_gate.py`, list in `event_gate_events.json`
+- [ ] Dashboard (`site/`)
+- [ ] GitHub Actions trading workflow, end-to-end dry run, failure-injection tests
+- [ ] First controlled live paper run
 
-No performance numbers are claimed here yet. When there are some, they will come from
-the backtest and from the audited `state.json`, both of which show their working.
+No live trading has happened yet. The backtest figures above are same-timestamp regime
+counts, not option-level P&L; real P&L will come from the audited `state.json`.
 
 ---
 

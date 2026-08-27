@@ -38,8 +38,7 @@ file — and no permission exists only as prose that some component has to inter
 **After the data-health gate, before the envelope.**
 
 ```
-state → data health → regime.py → [event gate] → gates.py → agent.py → validator → execution → audit.py
-                                                  ^ not built yet - see "Separate event-calendar gate"
+state → data health → regime.py → event_gate.py → gates.py → agent.py → validator → execution → audit.py
 ```
 
 It touches no account data and places no orders. It only reads prices. Safe to run at any
